@@ -18,6 +18,7 @@ data class ReceiptEntity(
     val imageUri: String,
     val createdAt: Long,
     val documentDate: String?,
+    val dueDate: String?,
     val merchant: String,
     val cnpj: String?,
     val amountCents: Long,

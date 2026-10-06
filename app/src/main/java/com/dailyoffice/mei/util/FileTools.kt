@@ -32,17 +32,17 @@ object CsvExporter {
         val file = File(dir, "dailyoffice_export_" + System.currentTimeMillis() + ".csv")
 
         file.bufferedWriter().use { out ->
-            out.appendLine("TIPO;DATA;FORNECEDOR/FONTE;VALOR;CLASSIFICACAO;PAGAMENTO;STATUS;OBSERVACAO")
+            out.appendLine("TIPO;DATA;VENCIMENTO;FORNECEDOR/FONTE;VALOR;CLASSIFICACAO;PAGAMENTO;STATUS;OBSERVACAO")
             receipts.forEach { r ->
                 out.appendLine(listOf(
-                    "DESPESA", r.documentDate.orEmpty(), csv(r.merchant),
+                    "DESPESA", r.documentDate.orEmpty(), r.dueDate.orEmpty(), csv(r.merchant),
                     (r.amountCents / 100.0).toString().replace('.', ','),
                     r.classification, r.paymentMethod, r.status, csv(r.notes)
                 ).joinToString(";"))
             }
             revenues.forEach { r ->
                 out.appendLine(listOf(
-                    "RECEITA", r.receivedAt.toString(), csv(r.source),
+                    "RECEITA", r.receivedAt.toString(), "", csv(r.source),
                     (r.amountCents / 100.0).toString().replace('.', ','),
                     "EMPRESA", "", "RECEBIDO", csv(r.notes)
                 ).joinToString(";"))
@@ -58,5 +58,8 @@ object CsvExporter {
         context.startActivity(Intent.createChooser(intent, "Exportar DailyOffice"))
     }
 
-    private fun csv(value: String): String = """ + value.replace(""", """") + """
+    private fun csv(value: String): String {
+        val quote = 34.toChar().toString()
+        return quote + value.replace(quote, quote + quote) + quote
+    }
 }

@@ -236,6 +236,8 @@ private fun ReceiptListScreen(receipts: List<ReceiptEntity>, pendingOnly: Boolea
                     Text(receipt.classification + " • " + receipt.paymentMethod + " • " + receipt.status)
                     val docDate = receipt.documentDate
                     if (docDate != null) Text("Documento: " + docDate)
+                    val dueDate = receipt.dueDate
+                    if (dueDate != null) Text("Vencimento: " + dueDate)
                     if (receipt.notes.isNotBlank()) Text(receipt.notes)
                 }
             }
@@ -330,6 +332,15 @@ private fun AddReceiptScreen(vm: DailyOfficeViewModel, onSaved: () -> Unit) {
             ChoiceField("Situação", draft.status, listOf("PAGO", "PENDENTE", "CANCELADO")) {
                 choice -> vm.updateDraft { it.copy(status = choice) }
             }
+        }
+        item {
+            OutlinedTextField(
+                value = draft.dueDate,
+                onValueChange = { value -> vm.updateDraft { it.copy(dueDate = value) } },
+                label = { Text("Vencimento, se houver") },
+                placeholder = { Text("dd/mm/aaaa") },
+                modifier = Modifier.fillMaxWidth()
+            )
         }
         item {
             OutlinedTextField(

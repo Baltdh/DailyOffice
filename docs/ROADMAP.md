@@ -51,8 +51,10 @@
 - [x] comprovantes e lançamentos isolados por empresa
 - [x] configuração MEI independente por empresa
 - [ ] contas bancárias/fontes de pagamento por empresa
-- [ ] estoque físico com propriedade por CNPJ
-- [ ] transferência documentada de estoque entre empresas
+- [x] estoque físico com propriedade por CNPJ
+- [x] transferência interna de estoque entre empresas com histórico
+- [ ] vínculo da transferência com documento fiscal/comprovante
+- [x] histórico auditável de movimentações de estoque
 - [ ] relatório consolidado sem misturar os livros de cada CNPJ
 
 ## M6 — Conciliação

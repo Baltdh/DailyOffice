@@ -12,6 +12,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dailyoffice.mei.data.Ownership
 import com.dailyoffice.mei.data.PaymentMethod
 import com.dailyoffice.mei.data.PaymentStatus
+import com.dailyoffice.mei.data.StockUnit
 import com.dailyoffice.mei.viewmodel.ReceiptViewModel
 import java.text.NumberFormat
 import java.util.Locale
@@ -25,6 +26,7 @@ fun ReceiptReviewScreen(
 ) {
     val d = viewModel.draft
     val activeCompany by viewModel.activeCompany.collectAsStateWithLifecycle()
+    val inventoryProducts by viewModel.inventoryProducts.collectAsStateWithLifecycle()
     var error by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
@@ -172,6 +174,93 @@ fun ReceiptReviewScreen(
                                         viewModel.updateItemOwnership(index, it)
                                     }
                                 )
+
+                                if (item.ownership == Ownership.BUSINESS) {
+                                    Row(
+                                        Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Column(Modifier.weight(1f)) {
+                                            Text("Adicionar ao estoque")
+                                            Text(
+                                                "Cria uma entrada vinculada a este comprovante.",
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                        }
+                                        Switch(
+                                            checked = item.addToStock,
+                                            onCheckedChange = {
+                                                viewModel.updateItemAddToStock(index, it)
+                                            }
+                                        )
+                                    }
+
+                                    if (item.addToStock) {
+                                        if (inventoryProducts.isEmpty()) {
+                                            Text(
+                                                "Cadastre um produto na tela Estoque antes de vincular este item.",
+                                                color = MaterialTheme.colorScheme.error,
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                        } else {
+                                            Text(
+                                                "Produto no estoque",
+                                                style = MaterialTheme.typography.labelLarge
+                                            )
+                                            Row(
+                                                Modifier.horizontalScroll(rememberScrollState()),
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                inventoryProducts.forEach { product ->
+                                                    FilterChip(
+                                                        selected = item.stockProductId == product.id,
+                                                        onClick = {
+                                                            viewModel.updateItemStockProduct(
+                                                                index,
+                                                                product.id
+                                                            )
+                                                        },
+                                                        label = {
+                                                            Text(
+                                                                product.name + " • " +
+                                                                    stockUnitLabel(product.unit)
+                                                            )
+                                                        }
+                                                    )
+                                                }
+                                            }
+
+                                            val selectedProduct = inventoryProducts.firstOrNull {
+                                                it.id == item.stockProductId
+                                            }
+                                            OutlinedTextField(
+                                                value = item.stockQuantity,
+                                                onValueChange = {
+                                                    viewModel.updateItemStockQuantity(index, it)
+                                                },
+                                                label = {
+                                                    Text(
+                                                        "Quantidade" +
+                                                            selectedProduct?.let {
+                                                                " (${stockUnitLabel(it.unit)})"
+                                                            }.orEmpty()
+                                                    )
+                                                },
+                                                supportingText = {
+                                                    val hint = item.unitHint
+                                                    if (!hint.isNullOrBlank()) {
+                                                        Text(
+                                                            "OCR sugeriu unidade/quantidade em “$hint”. Confira antes de salvar."
+                                                        )
+                                                    } else {
+                                                        Text("Informe a quantidade comprada.")
+                                                    }
+                                                },
+                                                modifier = Modifier.fillMaxWidth()
+                                            )
+                                        }
+                                    }
+                                }
 
                                 if (index != d.items.lastIndex) {
                                     HorizontalDivider()
@@ -357,3 +446,14 @@ private fun money(cents: Long): String =
     NumberFormat
         .getCurrencyInstance(Locale("pt", "BR"))
         .format(cents / 100.0)
+
+
+private fun stockUnitLabel(unit: StockUnit): String =
+    when (unit) {
+        StockUnit.UNIT -> "un"
+        StockUnit.GRAM -> "g"
+        StockUnit.KILOGRAM -> "kg"
+        StockUnit.MILLILITER -> "ml"
+        StockUnit.LITER -> "L"
+        StockUnit.PACK -> "pacote"
+    }

@@ -1107,10 +1107,12 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private fun parseQuantityMilli(value: String): Long? = runCatching {
-        val normalized = value
-            .trim()
-            .replace(".", "")
-            .replace(",", ".")
+        val clean = value.trim()
+        val normalized = if (clean.contains(',')) {
+            clean.replace(".", "").replace(",", ".")
+        } else {
+            clean
+        }
 
         BigDecimal(normalized)
             .movePointRight(3)

@@ -15,6 +15,8 @@ import com.dailyoffice.mei.finance.MeiCalculator
 import com.dailyoffice.mei.finance.MeiConfig
 import com.dailyoffice.mei.finance.MeiProjection
 import com.dailyoffice.mei.finance.MeiSettings
+import com.dailyoffice.mei.inventory.InventoryBalance
+import com.dailyoffice.mei.inventory.InventoryCalculator
 import com.dailyoffice.mei.receipt.ClassificationEngine
 import com.dailyoffice.mei.receipt.ReceiptArchive
 import com.dailyoffice.mei.receipt.ReceiptOcr
@@ -29,6 +31,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.UUID
 
 data class ReceiptItemDraft(
     val description: String,
@@ -75,6 +78,8 @@ data class DashboardSummary(
 class ReceiptViewModel(application: Application) : AndroidViewModel(application) {
     private val db = DailyOfficeDb.get(application)
     private val companyDao = db.companyDao()
+    private val inventoryProductDao = db.inventoryProductDao()
+    private val stockMovementDao = db.stockMovementDao()
     private val dao = db.receiptDao()
     private val itemDao = db.receiptItemDao()
     private val transactionDao = db.transactionDao()
@@ -132,6 +137,30 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
         meiSettings.load(_activeCompanyId.value)
     )
     val meiConfig: StateFlow<MeiConfig> = _meiConfig.asStateFlow()
+
+    val inventoryProducts = inventoryProductDao.observeActive()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val stockMovements = stockMovementDao.observeAll()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val inventoryBalances: StateFlow<List<InventoryBalance>> = combine(
+        inventoryProducts,
+        stockMovements,
+        _activeCompanyId
+    ) { products, movements, companyId ->
+        products.map { product ->
+            InventoryCalculator.balanceFor(
+                product = product,
+                movements = movements,
+                companyId = companyId
+            )
+        }
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5_000),
+        emptyList()
+    )
 
     val summary = combine(receipts, transactions) { receiptList, txList ->
         val totals = FinanceCalculator.summarize(txList)
@@ -749,6 +778,183 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
         )
     }
 
+    fun addInventoryProduct(
+        name: String,
+        unit: StockUnit,
+        onSaved: () -> Unit = {},
+        onError: (String) -> Unit = {}
+    ) {
+        val cleanName = name.trim()
+        if (cleanName.isBlank()) {
+            onError("Informe o nome do produto.")
+            return
+        }
+
+        if (inventoryProducts.value.any {
+                it.name.equals(cleanName, ignoreCase = true)
+            }) {
+            onError("Já existe um produto com esse nome.")
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                inventoryProductDao.insert(
+                    InventoryProduct(
+                        name = cleanName,
+                        unit = unit
+                    )
+                )
+            }.onSuccess {
+                withContext(Dispatchers.Main) { onSaved() }
+            }.onFailure {
+                withContext(Dispatchers.Main) {
+                    onError(it.message ?: "Não foi possível cadastrar o produto.")
+                }
+            }
+        }
+    }
+
+    fun addStockMovement(
+        productId: Long,
+        type: StockMovementType,
+        quantity: String,
+        totalCost: String,
+        note: String,
+        onSaved: () -> Unit = {},
+        onError: (String) -> Unit = {}
+    ) {
+        if (
+            type == StockMovementType.TRANSFER_IN ||
+            type == StockMovementType.TRANSFER_OUT
+        ) {
+            onError("Use a função de transferência entre empresas.")
+            return
+        }
+
+        val quantityMilli = parseQuantityMilli(quantity)
+            ?: return onError("Informe uma quantidade válida.")
+
+        if (quantityMilli <= 0) {
+            onError("A quantidade precisa ser maior que zero.")
+            return
+        }
+
+        val costCents = if (totalCost.isBlank()) {
+            null
+        } else {
+            parseCents(totalCost)
+                ?: return onError("Informe um custo total válido.")
+        }
+
+        val companyId = _activeCompanyId.value
+
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                if (type.isStockOut()) {
+                    val current = stockMovementDao.balanceFor(productId, companyId)
+                    if (quantityMilli > current) {
+                        error("Estoque insuficiente para essa saída.")
+                    }
+                }
+
+                stockMovementDao.insert(
+                    StockMovement(
+                        productId = productId,
+                        companyId = companyId,
+                        type = type,
+                        quantityMilli = quantityMilli,
+                        totalCostCents = costCents,
+                        note = note.trim()
+                    )
+                )
+            }.onSuccess {
+                withContext(Dispatchers.Main) { onSaved() }
+            }.onFailure {
+                withContext(Dispatchers.Main) {
+                    onError(it.message ?: "Não foi possível registrar o estoque.")
+                }
+            }
+        }
+    }
+
+    fun transferStock(
+        productId: Long,
+        targetCompanyId: Long,
+        quantity: String,
+        note: String,
+        onSaved: () -> Unit = {},
+        onError: (String) -> Unit = {}
+    ) {
+        val sourceCompanyId = _activeCompanyId.value
+
+        if (targetCompanyId == sourceCompanyId) {
+            onError("Selecione outra empresa para a transferência.")
+            return
+        }
+
+        if (companies.value.none { it.id == targetCompanyId }) {
+            onError("Empresa de destino não encontrada.")
+            return
+        }
+
+        val quantityMilli = parseQuantityMilli(quantity)
+            ?: return onError("Informe uma quantidade válida.")
+
+        if (quantityMilli <= 0) {
+            onError("A quantidade precisa ser maior que zero.")
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                val current = stockMovementDao.balanceFor(
+                    productId,
+                    sourceCompanyId
+                )
+                if (quantityMilli > current) {
+                    error("Estoque insuficiente para transferir.")
+                }
+
+                val groupId = UUID.randomUUID().toString()
+                val now = System.currentTimeMillis()
+
+                db.withTransaction {
+                    stockMovementDao.insert(
+                        StockMovement(
+                            productId = productId,
+                            companyId = sourceCompanyId,
+                            counterpartyCompanyId = targetCompanyId,
+                            type = StockMovementType.TRANSFER_OUT,
+                            quantityMilli = quantityMilli,
+                            note = note.trim(),
+                            transferGroupId = groupId,
+                            createdAt = now
+                        )
+                    )
+                    stockMovementDao.insert(
+                        StockMovement(
+                            productId = productId,
+                            companyId = targetCompanyId,
+                            counterpartyCompanyId = sourceCompanyId,
+                            type = StockMovementType.TRANSFER_IN,
+                            quantityMilli = quantityMilli,
+                            note = note.trim(),
+                            transferGroupId = groupId,
+                            createdAt = now
+                        )
+                    )
+                }
+            }.onSuccess {
+                withContext(Dispatchers.Main) { onSaved() }
+            }.onFailure {
+                withContext(Dispatchers.Main) {
+                    onError(it.message ?: "Não foi possível transferir o estoque.")
+                }
+            }
+        }
+    }
+
     fun selectCompany(companyId: Long) {
         if (companyId == _activeCompanyId.value) return
         if (companies.value.none { it.id == companyId }) return
@@ -899,6 +1105,23 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
 
         return business to personal
     }
+
+    private fun parseQuantityMilli(value: String): Long? = runCatching {
+        val normalized = value
+            .trim()
+            .replace(".", "")
+            .replace(",", ".")
+
+        BigDecimal(normalized)
+            .movePointRight(3)
+            .setScale(0, RoundingMode.HALF_UP)
+            .longValueExact()
+    }.getOrNull()
+
+    private fun StockMovementType.isStockOut(): Boolean =
+        this == StockMovementType.CONSUMPTION ||
+            this == StockMovementType.LOSS ||
+            this == StockMovementType.ADJUSTMENT_OUT
 
     private fun labelFor(kind: EntryKind): String = when (kind) {
         EntryKind.EXPENSE -> "Despesa"

@@ -9,11 +9,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.dailyoffice.mei.ui.FinanceScreen
 import com.dailyoffice.mei.ui.HomeScreen
+import com.dailyoffice.mei.ui.InventoryScreen
 import com.dailyoffice.mei.ui.ReceiptCaptureScreen
 import com.dailyoffice.mei.ui.ReceiptReviewScreen
 import com.dailyoffice.mei.viewmodel.ReceiptViewModel
 
-private enum class Screen { HOME, CAPTURE, REVIEW, FINANCE }
+private enum class Screen { HOME, CAPTURE, REVIEW, FINANCE, INVENTORY }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -28,7 +29,8 @@ class MainActivity : ComponentActivity() {
                         viewModel = vm,
                         onCapture = { screen = Screen.CAPTURE },
                         onReviewReady = { screen = Screen.REVIEW },
-                        onFinance = { screen = Screen.FINANCE }
+                        onFinance = { screen = Screen.FINANCE },
+                        onInventory = { screen = Screen.INVENTORY }
                     )
 
                     Screen.CAPTURE -> ReceiptCaptureScreen(
@@ -46,6 +48,11 @@ class MainActivity : ComponentActivity() {
                     )
 
                     Screen.FINANCE -> FinanceScreen(
+                        viewModel = vm,
+                        onBack = { screen = Screen.HOME }
+                    )
+
+                    Screen.INVENTORY -> InventoryScreen(
                         viewModel = vm,
                         onBack = { screen = Screen.HOME }
                     )

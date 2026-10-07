@@ -263,12 +263,18 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
 
         val itemDrafts = parsed.items.map { item ->
             val suggestion = ClassificationEngine.suggestItem(item.description)
+            val inventoryMatch = inventoryProducts.value.firstOrNull { product ->
+                item.description.contains(product.name, ignoreCase = true) ||
+                    product.name.contains(item.description, ignoreCase = true)
+            }
+
             ReceiptItemDraft(
                 description = item.description,
                 amountCents = item.amountCents,
                 ownership = suggestion.ownership,
                 confidence = item.confidence,
                 lineIndex = item.lineIndex,
+                stockProductId = inventoryMatch?.id,
                 stockQuantity = item.quantityMilli?.let(::formatQuantityMilli).orEmpty(),
                 unitHint = item.unitHint
             )

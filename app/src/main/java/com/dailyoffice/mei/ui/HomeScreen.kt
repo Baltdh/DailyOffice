@@ -169,6 +169,14 @@ fun HomeScreen(
             }
 
             item {
+                MetricCard(
+                    "Despesas da empresa pagas pelo titular",
+                    money(summary.ownerPaidBusinessExpensesCents),
+                    Modifier.fillMaxWidth()
+                )
+            }
+
+            item {
                 Card(Modifier.fillMaxWidth()) {
                     Column(
                         Modifier.padding(14.dp),

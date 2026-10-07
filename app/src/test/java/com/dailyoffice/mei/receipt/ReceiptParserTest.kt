@@ -26,8 +26,29 @@ class ReceiptParserTest {
 
     @Test
     fun fallsBackToLargestMoneyValueWithWarning() {
-        val parsed = ReceiptParser.parse("LOJA TESTE\nitem 10,00\nitem 35,50")
+        val parsed = ReceiptParser.parse(
+            "LOJA TESTE\nitem 10,00\nitem 35,50"
+        )
+
         assertEquals(3550L, parsed.totalCents)
         assertTrue(parsed.warnings.isNotEmpty())
+    }
+
+    @Test
+    fun parsesLineItemsAndIgnoresReceiptTotal() {
+        val text = """
+            MERCADO TESTE
+            SALMAO 20,00
+            RACAO GATO 10,00
+            VALOR TOTAL R$ 30,00
+        """.trimIndent()
+
+        val parsed = ReceiptParser.parse(text)
+
+        assertEquals(2, parsed.items.size)
+        assertEquals("SALMAO", parsed.items[0].description)
+        assertEquals(2000L, parsed.items[0].amountCents)
+        assertEquals("RACAO GATO", parsed.items[1].description)
+        assertEquals(1000L, parsed.items[1].amountCents)
     }
 }

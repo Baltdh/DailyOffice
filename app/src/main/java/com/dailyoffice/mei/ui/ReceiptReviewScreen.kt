@@ -12,6 +12,8 @@ import com.dailyoffice.mei.data.Ownership
 import com.dailyoffice.mei.data.PaymentMethod
 import com.dailyoffice.mei.data.PaymentStatus
 import com.dailyoffice.mei.viewmodel.ReceiptViewModel
+import java.text.NumberFormat
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -26,8 +28,18 @@ fun ReceiptReviewScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (viewModel.isEditing) "Editar comprovante" else "Conferir comprovante") },
-                navigationIcon = { TextButton(onClick = onBack) { Text("Voltar") } }
+                title = {
+                    Text(
+                        if (viewModel.isEditing) {
+                            "Editar comprovante"
+                        } else {
+                            "Conferir comprovante"
+                        }
+                    )
+                },
+                navigationIcon = {
+                    TextButton(onClick = onBack) { Text("Voltar") }
+                }
             )
         }
     ) { pad ->
@@ -41,16 +53,29 @@ fun ReceiptReviewScreen(
         ) {
             if (d.classificationReason.isNotBlank()) {
                 Card {
-                    Column(Modifier.padding(12.dp)) {
-                        Text("Sugestão automática", style = MaterialTheme.typography.labelLarge)
+                    Column(
+                        Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            "Sugestão automática",
+                            style = MaterialTheme.typography.labelLarge
+                        )
                         Text(d.classificationReason)
-                        Text("Confiança do OCR: ${(d.confidence * 100).toInt()}%")
+                        Text(
+                            "Confiança do OCR: ${(d.confidence * 100).toInt()}%",
+                            style = MaterialTheme.typography.bodySmall
+                        )
                     }
                 }
             }
 
             d.warnings.forEach { warning ->
-                Text(warning, color = MaterialTheme.colorScheme.error)
+                Text(
+                    warning,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
 
             OutlinedTextField(
@@ -59,18 +84,21 @@ fun ReceiptReviewScreen(
                 label = { Text("Fornecedor") },
                 modifier = Modifier.fillMaxWidth()
             )
+
             OutlinedTextField(
                 value = d.total,
                 onValueChange = viewModel::updateTotal,
                 label = { Text("Valor total (R$)") },
                 modifier = Modifier.fillMaxWidth()
             )
+
             OutlinedTextField(
                 value = d.date,
                 onValueChange = viewModel::updateDate,
                 label = { Text("Data (dd/mm/aaaa)") },
                 modifier = Modifier.fillMaxWidth()
             )
+
             OutlinedTextField(
                 value = d.documentNumber,
                 onValueChange = viewModel::updateDocument,
@@ -78,7 +106,93 @@ fun ReceiptReviewScreen(
                 modifier = Modifier.fillMaxWidth()
             )
 
-            Text("Classificação", style = MaterialTheme.typography.titleMedium)
+            if (d.items.isNotEmpty()) {
+                Card(Modifier.fillMaxWidth()) {
+                    Column(
+                        Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(
+                            "Itens detectados pelo OCR",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            "Revise cada item. Quando a soma fechar com o total, o app pode separar Empresa e Pessoal automaticamente.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+
+                        d.items.forEachIndexed { index, item ->
+                            Column(
+                                Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text(
+                                        item.description,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(
+                                        money(item.amountCents),
+                                        style = MaterialTheme.typography.labelLarge
+                                    )
+                                }
+
+                                Text(
+                                    "Confiança da leitura: ${(item.confidence * 100).toInt()}%",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+
+                                ChoiceRow(
+                                    values = listOf(
+                                        Ownership.BUSINESS,
+                                        Ownership.PERSONAL,
+                                        Ownership.REVIEW
+                                    ),
+                                    selected = item.ownership,
+                                    label = {
+                                        when (it) {
+                                            Ownership.BUSINESS -> "Empresa"
+                                            Ownership.PERSONAL -> "Pessoal"
+                                            Ownership.REVIEW -> "Revisar"
+                                            Ownership.MIXED -> "Misto"
+                                        }
+                                    },
+                                    onSelect = {
+                                        viewModel.updateItemOwnership(index, it)
+                                    }
+                                )
+
+                                if (index != d.items.lastIndex) {
+                                    HorizontalDivider()
+                                }
+                            }
+                        }
+
+                        Text(
+                            "Soma dos itens: ${money(d.items.sumOf { it.amountCents })}",
+                            style = MaterialTheme.typography.labelLarge
+                        )
+
+                        Button(
+                            onClick = {
+                                error = viewModel.applyItemSplit()
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Aplicar divisão pelos itens")
+                        }
+                    }
+                }
+            }
+
+            Text(
+                "Classificação do comprovante",
+                style = MaterialTheme.typography.titleMedium
+            )
+
             ChoiceRow(
                 values = Ownership.entries,
                 selected = d.ownership,
@@ -100,6 +214,7 @@ fun ReceiptReviewScreen(
                     label = { Text("Parte da empresa (R$)") },
                     modifier = Modifier.fillMaxWidth()
                 )
+
                 OutlinedTextField(
                     value = d.personalAmount,
                     onValueChange = viewModel::updatePersonalAmount,
@@ -108,7 +223,11 @@ fun ReceiptReviewScreen(
                 )
             }
 
-            Text("Pagamento", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Pagamento",
+                style = MaterialTheme.typography.titleMedium
+            )
+
             ChoiceRow(
                 values = PaymentMethod.entries,
                 selected = d.paymentMethod,
@@ -125,7 +244,11 @@ fun ReceiptReviewScreen(
                 onSelect = viewModel::updatePaymentMethod
             )
 
-            Text("Situação", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Situação",
+                style = MaterialTheme.typography.titleMedium
+            )
+
             ChoiceRow(
                 values = PaymentStatus.entries,
                 selected = d.paymentStatus,
@@ -156,9 +279,12 @@ fun ReceiptReviewScreen(
                 value = d.category,
                 onValueChange = viewModel::updateCategory,
                 label = { Text("Categoria") },
-                placeholder = { Text("Ex.: insumos, embalagem, higiene") },
+                placeholder = {
+                    Text("Ex.: insumos, embalagem, higiene")
+                },
                 modifier = Modifier.fillMaxWidth()
             )
+
             OutlinedTextField(
                 value = d.notes,
                 onValueChange = viewModel::updateNotes,
@@ -168,7 +294,10 @@ fun ReceiptReviewScreen(
             )
 
             error?.let {
-                Text(it, color = MaterialTheme.colorScheme.error)
+                Text(
+                    it,
+                    color = MaterialTheme.colorScheme.error
+                )
             }
 
             Button(
@@ -215,3 +344,8 @@ private fun <T> ChoiceRow(
         }
     }
 }
+
+private fun money(cents: Long): String =
+    NumberFormat
+        .getCurrencyInstance(Locale("pt", "BR"))
+        .format(cents / 100.0)

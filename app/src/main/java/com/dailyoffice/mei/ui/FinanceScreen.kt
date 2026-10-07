@@ -82,11 +82,29 @@ fun FinanceScreen(
                 }
             }
             item {
-                FinanceMetric("Débitos pendentes", money(summary.pendingCents), Modifier.fillMaxWidth())
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FinanceMetric(
+                        "Débitos pendentes",
+                        money(summary.pendingCents),
+                        Modifier.weight(1f)
+                    )
+                    FinanceMetric(
+                        "A receber",
+                        money(summary.receivableCents),
+                        Modifier.weight(1f)
+                    )
+                }
             }
 
             item {
                 Text("Novo lançamento", style = MaterialTheme.typography.titleLarge)
+                Text(
+                    "Para o controle do MEI, registre o faturamento bruto como Receita. Aportes não entram no faturamento.",
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
             item {
                 Row(

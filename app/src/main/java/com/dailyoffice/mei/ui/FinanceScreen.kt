@@ -349,6 +349,7 @@ private fun FinanceMetric(title: String, value: String, modifier: Modifier = Mod
 @Composable
 private fun TransactionCard(
     transaction: Transaction,
+    accountName: String?,
     onDelete: (() -> Unit)?
 ) {
     val kind = when (transaction.kind) {
@@ -366,6 +367,12 @@ private fun TransactionCard(
         ) {
             Text(transaction.description, style = MaterialTheme.typography.titleMedium)
             Text("$kind • ${money(transaction.amountCents)} • $source")
+            if (!accountName.isNullOrBlank()) {
+                Text(
+                    "Conta: $accountName",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
             Text(formatDate(transaction.createdAt), style = MaterialTheme.typography.bodySmall)
             if (
                 transaction.paymentStatus == PaymentStatus.PENDING ||
@@ -386,6 +393,7 @@ private fun TransactionCard(
 @Composable
 private fun AddEntryDialog(
     kind: EntryKind,
+    accounts: List<Account>,
     onDismiss: () -> Unit,
     onSave: (
         description: String,
@@ -393,6 +401,7 @@ private fun AddEntryDialog(
         ownership: Ownership,
         method: PaymentMethod,
         status: PaymentStatus,
+        accountId: Long?,
         date: String,
         dueDate: String
     ) -> Unit
@@ -404,6 +413,7 @@ private fun AddEntryDialog(
     var ownership by remember { mutableStateOf(Ownership.BUSINESS) }
     var method by remember { mutableStateOf(PaymentMethod.OTHER) }
     var status by remember { mutableStateOf(PaymentStatus.PAID) }
+    var accountId by remember { mutableStateOf<Long?>(null) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -471,6 +481,24 @@ private fun AddEntryDialog(
                     onSelect = { method = it }
                 )
 
+                Text("Conta / origem")
+                Text(
+                    "Escolha de onde saiu ou para onde entrou o dinheiro.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    accounts.forEach { account ->
+                        FilterChip(
+                            selected = accountId == account.id,
+                            onClick = { accountId = account.id },
+                            label = { Text(account.name) }
+                        )
+                    }
+                }
+
                 Text("Situação")
                 ChoiceChips(
                     values = listOf(
@@ -509,6 +537,7 @@ private fun AddEntryDialog(
                         ownership,
                         method,
                         status,
+                        accountId,
                         date,
                         dueDate
                     )
@@ -520,6 +549,67 @@ private fun AddEntryDialog(
         }
     )
 }
+
+@Composable
+private fun AddAccountDialog(
+    onDismiss: () -> Unit,
+    onSave: (String, AccountKind) -> Unit
+) {
+    var name by rememberSaveable { mutableStateOf("") }
+    var kind by remember { mutableStateOf(AccountKind.BUSINESS_BANK) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Nova conta") },
+        text = {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Nome da conta") },
+                    placeholder = { Text("Ex.: Nubank PJ, dinheiro, cartão pessoal") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text("Tipo")
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    AccountKind.entries.forEach { candidate ->
+                        FilterChip(
+                            selected = kind == candidate,
+                            onClick = { kind = candidate },
+                            label = { Text(accountKindLabel(candidate)) },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onSave(name, kind) }) {
+                Text("Cadastrar")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancelar") }
+        }
+    )
+}
+
+private fun accountKindLabel(kind: AccountKind): String =
+    when (kind) {
+        AccountKind.BUSINESS_BANK -> "Conta bancária da empresa"
+        AccountKind.BUSINESS_CASH -> "Dinheiro da empresa"
+        AccountKind.BUSINESS_CARD -> "Cartão da empresa"
+        AccountKind.OWNER_PERSONAL_BANK -> "Conta pessoal do titular"
+        AccountKind.OWNER_PERSONAL_CARD -> "Cartão pessoal do titular"
+        AccountKind.IFOOD_RECEIVABLE -> "Recebíveis do iFood"
+        AccountKind.OTHER -> "Outra"
+    }
 
 @Composable
 private fun <T> ChoiceChips(

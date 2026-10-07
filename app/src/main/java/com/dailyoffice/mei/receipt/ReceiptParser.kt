@@ -4,7 +4,9 @@ data class ParsedLineItem(
     val description: String,
     val amountCents: Long,
     val lineIndex: Int,
-    val confidence: Float
+    val confidence: Float,
+    val quantityMilli: Long? = null,
+    val unitHint: String? = null
 )
 
 data class ParsedReceipt(
@@ -22,6 +24,12 @@ object ReceiptParser {
     private val date = Regex("""\b([0-3]?\d[/.-][01]?\d[/.-]20\d{2})\b""")
     private val document = Regex("""(?i)(?:NFC-?E|NFCE|CUPOM|NOTA|COO)\D{0,20}(\d{3,})""")
     private val totalKeywords = listOf("valor total", "total a pagar", "a pagar", "total")
+    private val quantityWithUnit = Regex(
+        """(?i)\b(\d+(?:[,.]\d{1,3})?)\s*(kg|g|ml|l|un|und|unid|pc|pct)\b"""
+    )
+    private val quantityTimesPrice = Regex(
+        """(?i)\b(\d+(?:[,.]\d{1,3})?)\s*[xX]\s*(?:R\$\s*)?\d"""
+    )
     private val nonItemTerms = listOf(
         "valor total", "total a pagar", "subtotal", "desconto", "acréscimo", "acrescimo",
         "troco", "forma de pagamento", "pagamento", "dinheiro", "pix", "cartão",
@@ -106,11 +114,15 @@ object ReceiptParser {
 
             if (!looksLikeItemDescription(description)) return@forEachIndexed
 
+            val quantity = extractQuantity(line)
+
             result += ParsedLineItem(
                 description = description.take(120),
                 amountCents = amount,
                 lineIndex = index,
-                confidence = if (matches.size == 1) 0.80f else 0.65f
+                confidence = if (matches.size == 1) 0.80f else 0.65f,
+                quantityMilli = quantity?.first,
+                unitHint = quantity?.second
             )
         }
 
@@ -118,6 +130,31 @@ object ReceiptParser {
             .distinctBy { Triple(it.lineIndex, it.description.lowercase(), it.amountCents) }
             .take(50)
     }
+
+    private fun extractQuantity(line: String): Pair<Long, String?>? {
+        val withUnit = quantityWithUnit.find(line)
+        if (withUnit != null) {
+            val quantity = decimalToMilli(withUnit.groupValues[1]) ?: return null
+            val unit = withUnit.groupValues[2].lowercase()
+            return quantity to unit
+        }
+
+        val timesPrice = quantityTimesPrice.find(line)
+        if (timesPrice != null) {
+            val quantity = decimalToMilli(timesPrice.groupValues[1]) ?: return null
+            return quantity to "un"
+        }
+
+        return null
+    }
+
+    private fun decimalToMilli(value: String): Long? =
+        runCatching {
+            java.math.BigDecimal(value.replace(",", "."))
+                .movePointRight(3)
+                .setScale(0, java.math.RoundingMode.HALF_UP)
+                .longValueExact()
+        }.getOrNull()
 
     private fun looksLikeItemDescription(value: String): Boolean {
         val trimmed = value.trim()

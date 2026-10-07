@@ -1,5 +1,7 @@
 package com.dailyoffice.mei.finance
 
+import com.dailyoffice.mei.data.Account
+import com.dailyoffice.mei.data.AccountKind
 import com.dailyoffice.mei.data.EntryKind
 import com.dailyoffice.mei.data.Ownership
 import com.dailyoffice.mei.data.PaymentStatus
@@ -64,6 +66,28 @@ object FinanceCalculator {
                 }
                 .sumOf { it.amountCents }
         )
+    }
+
+    fun ownerPaidBusinessExpenses(
+        transactions: List<Transaction>,
+        accounts: List<Account>
+    ): Long {
+        val accountById = accounts.associateBy { it.id }
+
+        return transactions.asSequence()
+            .filter {
+                it.kind == EntryKind.EXPENSE &&
+                    it.ownership == Ownership.BUSINESS &&
+                    it.paymentStatus == PaymentStatus.PAID
+            }
+            .filter { transaction ->
+                when (accountById[transaction.accountId]?.kind) {
+                    AccountKind.OWNER_PERSONAL_BANK,
+                    AccountKind.OWNER_PERSONAL_CARD -> true
+                    else -> false
+                }
+            }
+            .sumOf { it.amountCents }
     }
 
     fun revenueForYear(

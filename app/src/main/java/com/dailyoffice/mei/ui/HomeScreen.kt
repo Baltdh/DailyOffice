@@ -18,6 +18,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dailyoffice.mei.data.Ownership
 import com.dailyoffice.mei.data.PaymentStatus
 import com.dailyoffice.mei.data.Receipt
+import com.dailyoffice.mei.receipt.ReceiptArchive
 import com.dailyoffice.mei.viewmodel.ReceiptViewModel
 import java.text.NumberFormat
 import java.util.Locale
@@ -271,6 +272,18 @@ fun HomeScreen(
                 items(filteredReceipts, key = { it.id }) { receipt ->
                     ReceiptCard(
                         receipt = receipt,
+                        onView = {
+                            runCatching {
+                                val uri = ReceiptArchive.shareUri(context, receipt.imageUri)
+                                val intent = Intent(Intent.ACTION_VIEW).apply {
+                                    setDataAndType(uri, "image/*")
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                context.startActivity(intent)
+                            }.onFailure {
+                                message = it.message ?: "Não foi possível abrir a foto."
+                            }
+                        },
                         onEdit = {
                             viewModel.beginEdit(receipt)
                             onReviewReady()
@@ -342,6 +355,7 @@ private fun MetricCard(title: String, value: String, modifier: Modifier = Modifi
 @Composable
 private fun ReceiptCard(
     receipt: Receipt,
+    onView: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -384,6 +398,7 @@ private fun ReceiptCard(
                 Text(receipt.category, style = MaterialTheme.typography.bodySmall)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = onView) { Text("Ver foto") }
                 TextButton(onClick = onEdit) { Text("Editar") }
                 TextButton(onClick = onDelete) { Text("Excluir") }
             }

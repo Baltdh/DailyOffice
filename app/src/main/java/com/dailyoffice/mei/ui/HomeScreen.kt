@@ -39,6 +39,7 @@ fun HomeScreen(
     val receipts by viewModel.receipts.collectAsStateWithLifecycle()
     val summary by viewModel.summary.collectAsStateWithLifecycle()
     val mei by viewModel.meiProjection.collectAsStateWithLifecycle()
+    val meiConfig by viewModel.meiConfig.collectAsStateWithLifecycle()
 
     var message by remember { mutableStateOf<String?>(null) }
     var query by rememberSaveable { mutableStateOf("") }
@@ -149,7 +150,10 @@ fun HomeScreen(
                         Modifier.padding(14.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Text("Limite MEI", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "Limite MEI • ${meiConfig.taxYear}",
+                            style = MaterialTheme.typography.titleMedium
+                        )
                         Text("${money(mei.revenueCents)} de ${money(mei.limitCents)}")
                         LinearProgressIndicator(
                             progress = mei.usage.coerceIn(0f, 1f),

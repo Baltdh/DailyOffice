@@ -57,6 +57,7 @@ data class DashboardSummary(
     val contributionCents: Long = 0,
     val withdrawalCents: Long = 0,
     val pendingCents: Long = 0,
+    val receivableCents: Long = 0,
     val reviewCount: Int = 0,
     val receiptCount: Int = 0
 )
@@ -87,7 +88,14 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
             contributionCents = txList.filter { it.kind == EntryKind.CONTRIBUTION }.sumOf { it.amountCents },
             withdrawalCents = txList.filter { it.kind == EntryKind.WITHDRAWAL }.sumOf { it.amountCents },
             pendingCents = txList.filter {
-                it.paymentStatus == PaymentStatus.PENDING || it.paymentStatus == PaymentStatus.OVERDUE
+                it.kind == EntryKind.EXPENSE &&
+                    (it.paymentStatus == PaymentStatus.PENDING ||
+                        it.paymentStatus == PaymentStatus.OVERDUE)
+            }.sumOf { it.amountCents },
+            receivableCents = txList.filter {
+                it.kind == EntryKind.REVENUE &&
+                    (it.paymentStatus == PaymentStatus.PENDING ||
+                        it.paymentStatus == PaymentStatus.OVERDUE)
             }.sumOf { it.amountCents },
             reviewCount = receiptList.count { it.ownership == Ownership.REVIEW },
             receiptCount = receiptList.size

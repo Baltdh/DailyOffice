@@ -112,6 +112,20 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
         MeiCalculator.calculate(0, 8_100_000L, 8, true)
     )
 
+    init {
+        viewModelScope.launch(Dispatchers.IO) {
+            dao.withoutHash().forEach { receipt ->
+                runCatching {
+                    val hash = ReceiptArchive.sha256(
+                        getApplication(),
+                        Uri.parse(receipt.imageUri)
+                    )
+                    dao.update(receipt.copy(imageSha256 = hash))
+                }
+            }
+        }
+    }
+
     var draft by mutableStateOf(ReceiptDraft())
         private set
 

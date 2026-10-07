@@ -57,6 +57,7 @@ data class ReceiptDraft(
     val ownership: Ownership = Ownership.REVIEW,
     val paymentMethod: PaymentMethod = PaymentMethod.OTHER,
     val paymentStatus: PaymentStatus = PaymentStatus.PAID,
+    val accountId: Long? = null,
     val dueDate: String = "",
     val category: String = "",
     val notes: String = "",
@@ -75,6 +76,7 @@ data class DashboardSummary(
     val withdrawalCents: Long = 0,
     val pendingCents: Long = 0,
     val receivableCents: Long = 0,
+    val ownerPaidBusinessExpensesCents: Long = 0,
     val reviewCount: Int = 0,
     val receiptCount: Int = 0
 )
@@ -82,6 +84,7 @@ data class DashboardSummary(
 class ReceiptViewModel(application: Application) : AndroidViewModel(application) {
     private val db = DailyOfficeDb.get(application)
     private val companyDao = db.companyDao()
+    private val accountDao = db.accountDao()
     private val inventoryProductDao = db.inventoryProductDao()
     private val stockMovementDao = db.stockMovementDao()
     private val dao = db.receiptDao()
@@ -111,6 +114,16 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
         SharingStarted.WhileSubscribed(5_000),
         null
     )
+
+    val accounts: StateFlow<List<Account>> = _activeCompanyId
+        .flatMapLatest { companyId ->
+            accountDao.observeByCompany(companyId)
+        }
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5_000),
+            emptyList()
+        )
 
     private val allReceipts = dao.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -166,8 +179,24 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
         emptyList()
     )
 
-    val summary = combine(receipts, transactions) { receiptList, txList ->
+    val summary = combine(receipts, transactions, accounts) { receiptList, txList, accountList ->
         val totals = FinanceCalculator.summarize(txList)
+        val accountById = accountList.associateBy { it.id }
+        val ownerPaid = txList
+            .filter {
+                it.kind == EntryKind.EXPENSE &&
+                    it.ownership == Ownership.BUSINESS &&
+                    it.paymentStatus == PaymentStatus.PAID
+            }
+            .filter { tx ->
+                when (accountById[tx.accountId]?.kind) {
+                    AccountKind.OWNER_PERSONAL_BANK,
+                    AccountKind.OWNER_PERSONAL_CARD -> true
+                    else -> false
+                }
+            }
+            .sumOf { it.amountCents }
+
         DashboardSummary(
             businessExpensesCents = totals.businessExpensesCents,
             personalExpensesCents = totals.personalExpensesCents,
@@ -176,6 +205,7 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
             withdrawalCents = totals.withdrawalCents,
             pendingCents = totals.pendingCents,
             receivableCents = totals.receivableCents,
+            ownerPaidBusinessExpensesCents = ownerPaid,
             reviewCount = receiptList.count { it.ownership == Ownership.REVIEW },
             receiptCount = receiptList.size
         )
@@ -212,6 +242,10 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
                         name = "Empresa principal"
                     )
                 )
+            }
+
+            companyDao.all().forEach { company ->
+                seedDefaultAccounts(company.id)
             }
 
             val selected = companyDao.byId(_activeCompanyId.value)
@@ -364,6 +398,7 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
             ownership = receipt.ownership,
             paymentMethod = receipt.paymentMethod,
             paymentStatus = receipt.paymentStatus,
+            accountId = receipt.accountId,
             dueDate = formatDate(receipt.dueAt),
             category = receipt.category,
             notes = receipt.notes,
@@ -549,6 +584,10 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
         draft = draft.copy(paymentStatus = v)
     }
 
+    fun updateAccount(accountId: Long?) {
+        draft = draft.copy(accountId = accountId)
+    }
+
     fun updateDueDate(v: String) { draft = draft.copy(dueDate = v) }
     fun updateCategory(v: String) { draft = draft.copy(category = v) }
     fun updateNotes(v: String) { draft = draft.copy(notes = v) }
@@ -571,6 +610,13 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
 
         if (draft.ownership == Ownership.MIXED && business + personal != total) {
             return onError("Em compra mista, empresa + pessoal precisa ser igual ao total.")
+        }
+
+        if (
+            draft.paymentStatus == PaymentStatus.PAID &&
+            draft.accountId == null
+        ) {
+            return onError("Selecione de onde saiu o dinheiro desta compra.")
         }
 
         val stockDrafts = draft.items.filter { it.addToStock }
@@ -611,6 +657,7 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
                     val receipt = Receipt(
                         id = editingReceiptId ?: 0,
                         companyId = editingCompanyId ?: _activeCompanyId.value,
+                        accountId = draft.accountId,
                         imageUri = draft.imageUri,
                         imageSha256 = draft.imageSha256,
                         supplier = draft.supplier.trim(),
@@ -701,6 +748,7 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
                         transactionDao.insert(
                             Transaction(
                                 companyId = receipt.companyId,
+                                accountId = receipt.accountId,
                                 receiptId = receiptId,
                                 description = receipt.supplier.ifBlank { "Despesa da empresa" },
                                 amountCents = business,
@@ -721,6 +769,7 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
                         transactionDao.insert(
                             Transaction(
                                 companyId = receipt.companyId,
+                                accountId = receipt.accountId,
                                 receiptId = receiptId,
                                 description = receipt.supplier.ifBlank { "Despesa pessoal" },
                                 amountCents = personal,
@@ -785,6 +834,7 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
         ownership: Ownership,
         paymentMethod: PaymentMethod,
         paymentStatus: PaymentStatus,
+        accountId: Long?,
         date: String,
         dueDate: String,
         onSaved: () -> Unit,
@@ -795,6 +845,10 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
 
         if (cents <= 0) {
             return onError("O valor precisa ser maior que zero.")
+        }
+
+        if (paymentStatus == PaymentStatus.PAID && accountId == null) {
+            return onError("Selecione a conta/origem do dinheiro.")
         }
 
         val effectiveOwnership = when (kind) {
@@ -812,6 +866,7 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
                 transactionDao.insert(
                     Transaction(
                         companyId = _activeCompanyId.value,
+                        accountId = accountId,
                         description = description.trim().ifBlank { labelFor(kind) },
                         amountCents = cents,
                         ownership = effectiveOwnership,
@@ -1102,13 +1157,15 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
 
         viewModelScope.launch(Dispatchers.IO) {
             runCatching {
-                companyDao.insert(
+                val id = companyDao.insert(
                     Company(
                         name = cleanName,
                         cnpj = cleanCnpj,
                         ownerName = ownerName.trim()
                     )
                 )
+                seedDefaultAccounts(id)
+                id
             }.onSuccess { id ->
                 withContext(Dispatchers.Main) {
                     _activeCompanyId.value = id
@@ -1121,6 +1178,43 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
             }.onFailure {
                 withContext(Dispatchers.Main) {
                     onError(it.message ?: "Não foi possível cadastrar a empresa.")
+                }
+            }
+        }
+    }
+
+    fun addAccount(
+        name: String,
+        kind: AccountKind,
+        onSaved: () -> Unit = {},
+        onError: (String) -> Unit = {}
+    ) {
+        val cleanName = name.trim()
+        if (cleanName.isBlank()) {
+            onError("Informe o nome da conta.")
+            return
+        }
+
+        if (accounts.value.any { it.name.equals(cleanName, ignoreCase = true) }) {
+            onError("Já existe uma conta com esse nome.")
+            return
+        }
+
+        val companyId = _activeCompanyId.value
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                accountDao.insert(
+                    Account(
+                        companyId = companyId,
+                        name = cleanName,
+                        kind = kind
+                    )
+                )
+            }.onSuccess {
+                withContext(Dispatchers.Main) { onSaved() }
+            }.onFailure {
+                withContext(Dispatchers.Main) {
+                    onError(it.message ?: "Não foi possível cadastrar a conta.")
                 }
             }
         }
@@ -1174,7 +1268,8 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
                 CsvExporter.export(
                     getApplication(),
                     receipts.value,
-                    transactions.value
+                    transactions.value,
+                    accounts.value
                 )
             }.onSuccess {
                 withContext(Dispatchers.Main) {
@@ -1185,6 +1280,29 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
                     onError(it.message ?: "Não foi possível exportar os dados.")
                 }
             }
+        }
+    }
+
+    private suspend fun seedDefaultAccounts(companyId: Long) {
+        if (accountDao.countForCompany(companyId) > 0) return
+
+        val defaults = listOf(
+            "Conta PJ" to AccountKind.BUSINESS_BANK,
+            "Dinheiro da empresa" to AccountKind.BUSINESS_CASH,
+            "Cartão da empresa" to AccountKind.BUSINESS_CARD,
+            "Conta pessoal do titular" to AccountKind.OWNER_PERSONAL_BANK,
+            "Cartão pessoal do titular" to AccountKind.OWNER_PERSONAL_CARD,
+            "iFood a receber" to AccountKind.IFOOD_RECEIVABLE
+        )
+
+        defaults.forEach { (name, kind) ->
+            accountDao.insert(
+                Account(
+                    companyId = companyId,
+                    name = name,
+                    kind = kind
+                )
+            )
         }
     }
 

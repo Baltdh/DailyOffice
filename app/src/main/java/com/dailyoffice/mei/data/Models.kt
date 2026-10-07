@@ -10,6 +10,15 @@ enum class Ownership { BUSINESS, PERSONAL, MIXED, REVIEW }
 enum class PaymentStatus { PAID, PENDING, OVERDUE, CANCELLED }
 enum class PaymentMethod { CASH, PIX, DEBIT, CREDIT, DIGITAL_WALLET, OTHER }
 enum class EntryKind { EXPENSE, REVENUE, CONTRIBUTION, WITHDRAWAL }
+enum class AccountKind {
+    BUSINESS_BANK,
+    BUSINESS_CASH,
+    BUSINESS_CARD,
+    OWNER_PERSONAL_BANK,
+    OWNER_PERSONAL_CARD,
+    IFOOD_RECEIVABLE,
+    OTHER
+}
 enum class StockUnit { UNIT, GRAM, KILOGRAM, MILLILITER, LITER, PACK }
 enum class StockMovementType {
     PURCHASE,
@@ -34,6 +43,24 @@ data class Company(
     val createdAt: Long = System.currentTimeMillis()
 )
 
+
+
+@Entity(
+    tableName = "accounts",
+    indices = [
+        Index("companyId"),
+        Index("active"),
+        Index("kind")
+    ]
+)
+data class Account(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val companyId: Long,
+    val name: String,
+    val kind: AccountKind = AccountKind.OTHER,
+    val active: Boolean = true,
+    val createdAt: Long = System.currentTimeMillis()
+)
 
 @Entity(
     tableName = "inventory_products",
@@ -80,13 +107,15 @@ data class StockMovement(
         Index("ownership"),
         Index("paymentStatus"),
         Index("imageSha256"),
-        Index("companyId")
+        Index("companyId"),
+        Index("accountId")
     ]
 )
 data class Receipt(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     @ColumnInfo(defaultValue = "1")
     val companyId: Long = 1,
+    val accountId: Long? = null,
     val imageUri: String,
     @ColumnInfo(defaultValue = "''")
     val imageSha256: String = "",
@@ -141,13 +170,15 @@ data class ReceiptItem(
         Index("dueAt"),
         Index("kind"),
         Index("createdAt"),
-        Index("companyId")
+        Index("companyId"),
+        Index("accountId")
     ]
 )
 data class Transaction(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     @ColumnInfo(defaultValue = "1")
     val companyId: Long = 1,
+    val accountId: Long? = null,
     val receiptId: Long? = null,
     val description: String,
     val amountCents: Long,
@@ -178,8 +209,39 @@ interface CompanyDao {
 
     @Query("SELECT COUNT(*) FROM companies")
     suspend fun count(): Int
+
+    @Query("SELECT * FROM companies ORDER BY id ASC")
+    suspend fun all(): List<Company>
 }
 
+
+
+@Dao
+interface AccountDao {
+    @Insert
+    suspend fun insert(account: Account): Long
+
+    @Update
+    suspend fun update(account: Account)
+
+    @Query(
+        "SELECT * FROM accounts WHERE companyId = :companyId AND active = 1 " +
+            "ORDER BY name COLLATE NOCASE ASC"
+    )
+    fun observeByCompany(companyId: Long): Flow<List<Account>>
+
+    @Query(
+        "SELECT * FROM accounts WHERE companyId = :companyId AND active = 1 " +
+            "ORDER BY name COLLATE NOCASE ASC"
+    )
+    suspend fun activeByCompany(companyId: Long): List<Account>
+
+    @Query("SELECT COUNT(*) FROM accounts WHERE companyId = :companyId")
+    suspend fun countForCompany(companyId: Long): Int
+
+    @Query("SELECT * FROM accounts WHERE id = :id LIMIT 1")
+    suspend fun byId(id: Long): Account?
+}
 
 @Dao
 interface InventoryProductDao {
@@ -285,18 +347,20 @@ interface TransactionDao {
 @Database(
     entities = [
         Company::class,
+        Account::class,
         InventoryProduct::class,
         StockMovement::class,
         Receipt::class,
         ReceiptItem::class,
         Transaction::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
 abstract class DailyOfficeDb : RoomDatabase() {
     abstract fun companyDao(): CompanyDao
+    abstract fun accountDao(): AccountDao
     abstract fun inventoryProductDao(): InventoryProductDao
     abstract fun stockMovementDao(): StockMovementDao
     abstract fun receiptDao(): ReceiptDao
@@ -474,6 +538,46 @@ abstract class DailyOfficeDb : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS accounts (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        companyId INTEGER NOT NULL,
+                        name TEXT NOT NULL,
+                        kind TEXT NOT NULL,
+                        active INTEGER NOT NULL,
+                        createdAt INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_accounts_companyId ON accounts(companyId)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_accounts_active ON accounts(active)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_accounts_kind ON accounts(kind)"
+                )
+
+                db.execSQL(
+                    "ALTER TABLE receipts ADD COLUMN accountId INTEGER"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_receipts_accountId ON receipts(accountId)"
+                )
+
+                db.execSQL(
+                    "ALTER TABLE transactions ADD COLUMN accountId INTEGER"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_transactions_accountId ON transactions(accountId)"
+                )
+            }
+        }
+
         fun get(context: Context): DailyOfficeDb =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -481,7 +585,7 @@ abstract class DailyOfficeDb : RoomDatabase() {
                     DailyOfficeDb::class.java,
                     "dailyoffice.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                     .build()
                     .also { instance = it }
             }
@@ -497,6 +601,8 @@ class Converters {
     @TypeConverter fun stringToStatus(value: String) = PaymentStatus.valueOf(value)
     @TypeConverter fun kindToString(value: EntryKind) = value.name
     @TypeConverter fun stringToKind(value: String) = EntryKind.valueOf(value)
+    @TypeConverter fun accountKindToString(value: AccountKind) = value.name
+    @TypeConverter fun stringToAccountKind(value: String) = AccountKind.valueOf(value)
     @TypeConverter fun stockUnitToString(value: StockUnit) = value.name
     @TypeConverter fun stringToStockUnit(value: String) = StockUnit.valueOf(value)
     @TypeConverter fun stockMovementTypeToString(value: StockMovementType) = value.name

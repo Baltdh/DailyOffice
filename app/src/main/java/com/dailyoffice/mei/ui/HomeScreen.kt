@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.dailyoffice.mei.data.Company
 import com.dailyoffice.mei.data.Ownership
 import com.dailyoffice.mei.data.PaymentStatus
 import com.dailyoffice.mei.data.Receipt
@@ -40,11 +41,16 @@ fun HomeScreen(
     val summary by viewModel.summary.collectAsStateWithLifecycle()
     val mei by viewModel.meiProjection.collectAsStateWithLifecycle()
     val meiConfig by viewModel.meiConfig.collectAsStateWithLifecycle()
+    val companies by viewModel.companies.collectAsStateWithLifecycle()
+    val activeCompany by viewModel.activeCompany.collectAsStateWithLifecycle()
 
     var message by remember { mutableStateOf<String?>(null) }
     var query by rememberSaveable { mutableStateOf("") }
     var filter by remember { mutableStateOf(ReceiptFilter.ALL) }
     var pendingDelete by remember { mutableStateOf<Receipt?>(null) }
+    var showCompanies by remember { mutableStateOf(false) }
+    var showCompanyForm by remember { mutableStateOf(false) }
+    var companyFormTarget by remember { mutableStateOf<Company?>(null) }
 
     val gallery = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
@@ -102,6 +108,21 @@ fun HomeScreen(
         ) {
             item {
                 Text("Visão geral", style = MaterialTheme.typography.headlineSmall)
+            }
+
+            item {
+                CompanyCard(
+                    company = activeCompany,
+                    onSwitch = { showCompanies = true },
+                    onEdit = {
+                        companyFormTarget = activeCompany
+                        showCompanyForm = true
+                    },
+                    onNew = {
+                        companyFormTarget = null
+                        showCompanyForm = true
+                    }
+                )
             }
 
             item {
@@ -309,6 +330,57 @@ fun HomeScreen(
         }
     }
 
+    if (showCompanies) {
+        CompanySelectorDialog(
+            companies = companies,
+            selectedId = activeCompany?.id,
+            onSelect = {
+                viewModel.selectCompany(it.id)
+                showCompanies = false
+            },
+            onNew = {
+                showCompanies = false
+                companyFormTarget = null
+                showCompanyForm = true
+            },
+            onDismiss = { showCompanies = false }
+        )
+    }
+
+    if (showCompanyForm) {
+        CompanyFormDialog(
+            company = companyFormTarget,
+            onDismiss = { showCompanyForm = false },
+            onSave = { name, cnpj, owner ->
+                val target = companyFormTarget
+                if (target == null) {
+                    viewModel.createCompany(
+                        name = name,
+                        cnpj = cnpj,
+                        ownerName = owner,
+                        onSaved = {
+                            showCompanyForm = false
+                            message = "Empresa cadastrada e selecionada."
+                        },
+                        onError = { message = it }
+                    )
+                } else {
+                    viewModel.updateCompany(
+                        company = target,
+                        name = name,
+                        cnpj = cnpj,
+                        ownerName = owner,
+                        onSaved = {
+                            showCompanyForm = false
+                            message = "Cadastro da empresa atualizado."
+                        },
+                        onError = { message = it }
+                    )
+                }
+            }
+        )
+    }
+
     pendingDelete?.let { receipt ->
         AlertDialog(
             onDismissRequest = { pendingDelete = null },
@@ -339,6 +411,159 @@ fun HomeScreen(
             }
         )
     }
+}
+
+@Composable
+private fun CompanyCard(
+    company: Company?,
+    onSwitch: () -> Unit,
+    onEdit: () -> Unit,
+    onNew: () -> Unit
+) {
+    Card(Modifier.fillMaxWidth()) {
+        Column(
+            Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text("Empresa ativa", style = MaterialTheme.typography.labelLarge)
+            Text(
+                company?.name ?: "Carregando...",
+                style = MaterialTheme.typography.titleLarge
+            )
+            if (!company?.cnpj.isNullOrBlank()) {
+                Text(
+                    "CNPJ ${formatCnpj(company!!.cnpj)}",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+            Row(
+                Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(onClick = onSwitch) { Text("Trocar") }
+                TextButton(onClick = onEdit, enabled = company != null) {
+                    Text("Editar")
+                }
+                TextButton(onClick = onNew) { Text("Nova empresa") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompanySelectorDialog(
+    companies: List<Company>,
+    selectedId: Long?,
+    onSelect: (Company) -> Unit,
+    onNew: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Selecionar empresa") },
+        text = {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                companies.forEach { company ->
+                    FilterChip(
+                        selected = company.id == selectedId,
+                        onClick = { onSelect(company) },
+                        label = {
+                            Column {
+                                Text(company.name)
+                                if (company.cnpj.isNotBlank()) {
+                                    Text(
+                                        formatCnpj(company.cnpj),
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                OutlinedButton(
+                    onClick = onNew,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Adicionar empresa")
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Fechar") }
+        }
+    )
+}
+
+@Composable
+private fun CompanyFormDialog(
+    company: Company?,
+    onDismiss: () -> Unit,
+    onSave: (name: String, cnpj: String, owner: String) -> Unit
+) {
+    var name by remember(company?.id) {
+        mutableStateOf(company?.name.orEmpty())
+    }
+    var cnpj by remember(company?.id) {
+        mutableStateOf(company?.cnpj.orEmpty())
+    }
+    var owner by remember(company?.id) {
+        mutableStateOf(company?.ownerName.orEmpty())
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(if (company == null) "Nova empresa" else "Editar empresa")
+        },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Nome da loja/empresa") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = cnpj,
+                    onValueChange = {
+                        cnpj = it.filter(Char::isDigit).take(14)
+                    },
+                    label = { Text("CNPJ") },
+                    supportingText = {
+                        Text("14 dígitos; pode deixar vazio por enquanto.")
+                    },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = owner,
+                    onValueChange = { owner = it },
+                    label = { Text("Titular") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onSave(name, cnpj, owner) }) {
+                Text("Salvar")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancelar") }
+        }
+    )
 }
 
 @Composable
@@ -420,3 +645,14 @@ private fun ReceiptCard(
 
 private fun money(cents: Long): String =
     NumberFormat.getCurrencyInstance(Locale("pt", "BR")).format(cents / 100.0)
+
+private fun formatCnpj(value: String): String {
+    val digits = value.filter(Char::isDigit)
+    if (digits.length != 14) return value
+
+    return digits.substring(0, 2) + "." +
+        digits.substring(2, 5) + "." +
+        digits.substring(5, 8) + "/" +
+        digits.substring(8, 12) + "-" +
+        digits.substring(12, 14)
+}

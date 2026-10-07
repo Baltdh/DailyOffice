@@ -8,6 +8,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dailyoffice.mei.data.Ownership
 import com.dailyoffice.mei.data.PaymentMethod
 import com.dailyoffice.mei.data.PaymentStatus
@@ -23,6 +24,7 @@ fun ReceiptReviewScreen(
     onSaved: () -> Unit
 ) {
     val d = viewModel.draft
+    val activeCompany by viewModel.activeCompany.collectAsStateWithLifecycle()
     var error by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
@@ -51,6 +53,12 @@ fun ReceiptReviewScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            AssistChip(
+                onClick = {},
+                label = {
+                    Text("Empresa: ${activeCompany?.name ?: "Empresa ativa"}")
+                }
+            )
             if (d.classificationReason.isNotBlank()) {
                 Card {
                     Column(

@@ -74,18 +74,64 @@ data class DashboardSummary(
 
 class ReceiptViewModel(application: Application) : AndroidViewModel(application) {
     private val db = DailyOfficeDb.get(application)
+    private val companyDao = db.companyDao()
     private val dao = db.receiptDao()
     private val itemDao = db.receiptItemDao()
     private val transactionDao = db.transactionDao()
     private val meiSettings = MeiSettings(application)
+    private val companyPrefs = application.getSharedPreferences(
+        "company_settings",
+        android.content.Context.MODE_PRIVATE
+    )
 
-    val receipts = dao.observeAll()
+    private val _activeCompanyId = MutableStateFlow(
+        companyPrefs.getLong("activeCompanyId", 1L)
+    )
+    val activeCompanyId: StateFlow<Long> = _activeCompanyId.asStateFlow()
+
+    val companies = companyDao.observeActive()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    val transactions = transactionDao.observeAll()
+    val activeCompany: StateFlow<Company?> = combine(
+        companies,
+        _activeCompanyId
+    ) { companyList, activeId ->
+        companyList.firstOrNull { it.id == activeId }
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5_000),
+        null
+    )
+
+    private val allReceipts = dao.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    val meiConfig = meiSettings.state
+    val receipts = combine(allReceipts, _activeCompanyId) { receiptList, activeId ->
+        receiptList.filter { it.companyId == activeId }
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5_000),
+        emptyList()
+    )
+
+    private val allTransactions = transactionDao.observeAll()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val transactions = combine(
+        allTransactions,
+        _activeCompanyId
+    ) { transactionList, activeId ->
+        transactionList.filter { it.companyId == activeId }
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5_000),
+        emptyList()
+    )
+
+    private val _meiConfig = MutableStateFlow(
+        meiSettings.load(_activeCompanyId.value)
+    )
+    val meiConfig: StateFlow<MeiConfig> = _meiConfig.asStateFlow()
 
     val summary = combine(receipts, transactions) { receiptList, txList ->
         val totals = FinanceCalculator.summarize(txList)
@@ -126,6 +172,26 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
 
     init {
         viewModelScope.launch(Dispatchers.IO) {
+            if (companyDao.count() == 0) {
+                companyDao.insert(
+                    Company(
+                        id = 1,
+                        name = "Empresa principal"
+                    )
+                )
+            }
+
+            val selected = companyDao.byId(_activeCompanyId.value)
+                ?: companyDao.byId(1L)
+
+            if (selected != null && selected.id != _activeCompanyId.value) {
+                _activeCompanyId.value = selected.id
+                companyPrefs.edit()
+                    .putLong("activeCompanyId", selected.id)
+                    .apply()
+                _meiConfig.value = meiSettings.load(selected.id)
+            }
+
             dao.withoutHash().forEach { receipt ->
                 runCatching {
                     val hash = ReceiptArchive.sha256(
@@ -148,6 +214,7 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
         private set
 
     private var editingCreatedAt: Long? = null
+    private var editingCompanyId: Long? = null
 
     val isEditing: Boolean
         get() = editingReceiptId != null
@@ -155,6 +222,7 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
     fun beginReview(imageUri: String, rawText: String, imageSha256: String = "") {
         editingReceiptId = null
         editingCreatedAt = null
+        editingCompanyId = null
 
         val parsed = ReceiptParser.parse(rawText)
         val overallSuggestion = ClassificationEngine.suggest(rawText, parsed.supplier)
@@ -237,6 +305,7 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
     fun beginEdit(receipt: Receipt) {
         editingReceiptId = receipt.id
         editingCreatedAt = receipt.createdAt
+        editingCompanyId = receipt.companyId
 
         draft = ReceiptDraft(
             imageUri = receipt.imageUri,
@@ -444,6 +513,7 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
 
                     val receipt = Receipt(
                         id = editingReceiptId ?: 0,
+                        companyId = editingCompanyId ?: _activeCompanyId.value,
                         imageUri = draft.imageUri,
                         imageSha256 = draft.imageSha256,
                         supplier = draft.supplier.trim(),
@@ -492,6 +562,7 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
                     if (receipt.paymentStatus != PaymentStatus.CANCELLED && business > 0) {
                         transactionDao.insert(
                             Transaction(
+                                companyId = receipt.companyId,
                                 receiptId = receiptId,
                                 description = receipt.supplier.ifBlank { "Despesa da empresa" },
                                 amountCents = business,
@@ -511,6 +582,7 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
                     if (receipt.paymentStatus != PaymentStatus.CANCELLED && personal > 0) {
                         transactionDao.insert(
                             Transaction(
+                                companyId = receipt.companyId,
                                 receiptId = receiptId,
                                 description = receipt.supplier.ifBlank { "Despesa pessoal" },
                                 amountCents = personal,
@@ -532,6 +604,7 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
                     draft = ReceiptDraft()
                     editingReceiptId = null
                     editingCreatedAt = null
+                    editingCompanyId = null
                     saving = false
                     onSaved()
                 }
@@ -599,6 +672,7 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
             runCatching {
                 transactionDao.insert(
                     Transaction(
+                        companyId = _activeCompanyId.value,
                         description = description.trim().ifBlank { labelFor(kind) },
                         amountCents = cents,
                         ownership = effectiveOwnership,
@@ -664,14 +738,115 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
             return onError("O ano fiscal deve estar entre 2000 e 2100.")
         }
 
-        meiSettings.update(
-            MeiConfig(
+        _meiConfig.value = meiSettings.update(
+            companyId = _activeCompanyId.value,
+            config = MeiConfig(
                 annualLimitCents = limit,
                 openingMonth = month,
                 proportionalFirstYear = firstYear,
                 taxYear = year
             )
         )
+    }
+
+    fun selectCompany(companyId: Long) {
+        if (companyId == _activeCompanyId.value) return
+        if (companies.value.none { it.id == companyId }) return
+
+        _activeCompanyId.value = companyId
+        companyPrefs.edit()
+            .putLong("activeCompanyId", companyId)
+            .apply()
+        _meiConfig.value = meiSettings.load(companyId)
+
+        draft = ReceiptDraft()
+        editingReceiptId = null
+        editingCreatedAt = null
+        editingCompanyId = null
+    }
+
+    fun createCompany(
+        name: String,
+        cnpj: String,
+        ownerName: String,
+        onSaved: () -> Unit = {},
+        onError: (String) -> Unit = {}
+    ) {
+        val cleanName = name.trim()
+        if (cleanName.isBlank()) {
+            onError("Informe o nome da empresa.")
+            return
+        }
+
+        val cleanCnpj = cnpj.filter(Char::isDigit)
+        if (cleanCnpj.isNotEmpty() && cleanCnpj.length != 14) {
+            onError("O CNPJ deve ter 14 dígitos.")
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                companyDao.insert(
+                    Company(
+                        name = cleanName,
+                        cnpj = cleanCnpj,
+                        ownerName = ownerName.trim()
+                    )
+                )
+            }.onSuccess { id ->
+                withContext(Dispatchers.Main) {
+                    _activeCompanyId.value = id
+                    companyPrefs.edit()
+                        .putLong("activeCompanyId", id)
+                        .apply()
+                    _meiConfig.value = meiSettings.load(id)
+                    onSaved()
+                }
+            }.onFailure {
+                withContext(Dispatchers.Main) {
+                    onError(it.message ?: "Não foi possível cadastrar a empresa.")
+                }
+            }
+        }
+    }
+
+    fun updateCompany(
+        company: Company,
+        name: String,
+        cnpj: String,
+        ownerName: String,
+        onSaved: () -> Unit = {},
+        onError: (String) -> Unit = {}
+    ) {
+        val cleanName = name.trim()
+        if (cleanName.isBlank()) {
+            onError("Informe o nome da empresa.")
+            return
+        }
+
+        val cleanCnpj = cnpj.filter(Char::isDigit)
+        if (cleanCnpj.isNotEmpty() && cleanCnpj.length != 14) {
+            onError("O CNPJ deve ter 14 dígitos.")
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                companyDao.update(
+                    company.copy(
+                        name = cleanName,
+                        cnpj = cleanCnpj,
+                        ownerName = ownerName.trim()
+                    )
+                )
+            }.onSuccess {
+                withContext(Dispatchers.Main) { onSaved() }
+            }.onFailure {
+                withContext(Dispatchers.Main) {
+                    onError(it.message ?: "Não foi possível atualizar a empresa.")
+                }
+            }
+        }
     }
 
     fun exportCsv(

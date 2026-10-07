@@ -38,7 +38,11 @@ data class ReceiptItemDraft(
     val amountCents: Long,
     val ownership: Ownership = Ownership.REVIEW,
     val confidence: Float = 0f,
-    val lineIndex: Int = 0
+    val lineIndex: Int = 0,
+    val stockProductId: Long? = null,
+    val stockQuantity: String = "",
+    val addToStock: Boolean = false,
+    val unitHint: String? = null
 )
 
 data class ReceiptDraft(
@@ -264,7 +268,9 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
                 amountCents = item.amountCents,
                 ownership = suggestion.ownership,
                 confidence = item.confidence,
-                lineIndex = item.lineIndex
+                lineIndex = item.lineIndex,
+                stockQuantity = item.quantityMilli?.let(::formatQuantityMilli).orEmpty(),
+                unitHint = item.unitHint
             )
         }
 
@@ -369,7 +375,12 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
                     amountCents = item.amountCents,
                     ownership = item.ownership,
                     confidence = item.confidence,
-                    lineIndex = item.lineIndex
+                    lineIndex = item.lineIndex,
+                    stockProductId = item.stockProductId,
+                    stockQuantity = if (item.stockQuantityMilli > 0) {
+                        formatQuantityMilli(item.stockQuantityMilli)
+                    } else "",
+                    addToStock = item.addToStock
                 )
             }
 
@@ -445,6 +456,33 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
 
         val updated = draft.items.toMutableList()
         updated[index] = updated[index].copy(ownership = ownership)
+        draft = draft.copy(items = updated)
+    }
+
+    fun updateItemStockProduct(index: Int, productId: Long?) {
+        if (index !in draft.items.indices) return
+
+        val updated = draft.items.toMutableList()
+        updated[index] = updated[index].copy(stockProductId = productId)
+        draft = draft.copy(items = updated)
+    }
+
+    fun updateItemStockQuantity(index: Int, quantity: String) {
+        if (index !in draft.items.indices) return
+
+        val updated = draft.items.toMutableList()
+        updated[index] = updated[index].copy(stockQuantity = quantity)
+        draft = draft.copy(items = updated)
+    }
+
+    fun updateItemAddToStock(index: Int, enabled: Boolean) {
+        if (index !in draft.items.indices) return
+
+        val updated = draft.items.toMutableList()
+        updated[index] = updated[index].copy(
+            addToStock = enabled,
+            stockProductId = if (enabled) updated[index].stockProductId else null
+        )
         draft = draft.copy(items = updated)
     }
 
@@ -525,6 +563,26 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
             return onError("Em compra mista, empresa + pessoal precisa ser igual ao total.")
         }
 
+        val stockDrafts = draft.items.filter { it.addToStock }
+        stockDrafts.forEach { item ->
+            if (item.ownership != Ownership.BUSINESS) {
+                return onError(
+                    "Somente itens classificados como Empresa podem entrar no estoque."
+                )
+            }
+            if (item.stockProductId == null) {
+                return onError(
+                    "Selecione o produto de estoque para “${item.description}”."
+                )
+            }
+            val quantity = parseQuantityMilli(item.stockQuantity)
+            if (quantity == null || quantity <= 0) {
+                return onError(
+                    "Informe uma quantidade válida para “${item.description}”."
+                )
+            }
+        }
+
         saving = true
 
         viewModelScope.launch(Dispatchers.IO) {
@@ -579,14 +637,55 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
                                     amountCents = item.amountCents,
                                     ownership = item.ownership,
                                     confidence = item.confidence,
-                                    lineIndex = item.lineIndex
+                                    lineIndex = item.lineIndex,
+                                    stockProductId = item.stockProductId,
+                                    stockQuantityMilli = parseQuantityMilli(
+                                        item.stockQuantity
+                                    ) ?: 0,
+                                    addToStock = item.addToStock
                                 )
                             }
                         )
                     }
 
                     transactionDao.deleteByReceiptId(receiptId)
+                    stockMovementDao.deleteReceiptPurchases(receiptId)
                     val txDate = receipt.issuedAt ?: receipt.createdAt
+
+                    if (receipt.paymentStatus != PaymentStatus.CANCELLED) {
+                        draft.items
+                            .filter { it.addToStock }
+                            .forEach { item ->
+                                val productId = item.stockProductId
+                                    ?: error("Produto de estoque não selecionado.")
+                                val quantityMilli = parseQuantityMilli(
+                                    item.stockQuantity
+                                ) ?: error("Quantidade de estoque inválida.")
+
+                                stockMovementDao.insert(
+                                    StockMovement(
+                                        productId = productId,
+                                        companyId = receipt.companyId,
+                                        type = StockMovementType.PURCHASE,
+                                        quantityMilli = quantityMilli,
+                                        totalCostCents = item.amountCents,
+                                        note = buildString {
+                                            append("Compra via comprovante")
+                                            if (receipt.supplier.isNotBlank()) {
+                                                append(" • ")
+                                                append(receipt.supplier)
+                                            }
+                                            if (receipt.documentNumber.isNotBlank()) {
+                                                append(" • doc ")
+                                                append(receipt.documentNumber)
+                                            }
+                                        },
+                                        receiptId = receiptId,
+                                        createdAt = txDate
+                                    )
+                                )
+                            }
+                    }
 
                     if (receipt.paymentStatus != PaymentStatus.CANCELLED && business > 0) {
                         transactionDao.insert(
@@ -655,6 +754,7 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
             runCatching {
                 db.withTransaction {
                     transactionDao.deleteByReceiptId(receipt.id)
+                    stockMovementDao.deleteReceiptPurchases(receipt.id)
                     dao.delete(receipt)
                 }
                 ReceiptArchive.deleteArchived(receipt.imageUri)
@@ -1105,6 +1205,13 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
 
         return business to personal
     }
+
+    private fun formatQuantityMilli(quantityMilli: Long): String =
+        BigDecimal(quantityMilli)
+            .divide(BigDecimal(1000))
+            .stripTrailingZeros()
+            .toPlainString()
+            .replace('.', ',')
 
     private fun parseQuantityMilli(value: String): Long? = runCatching {
         val clean = value.trim()

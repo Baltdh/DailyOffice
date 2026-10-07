@@ -23,6 +23,7 @@ enum class EntryKind { EXPENSE, REVENUE, CONTRIBUTION, WITHDRAWAL }
 data class Receipt(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val imageUri: String,
+    @ColumnInfo(defaultValue = "''")
     val imageSha256: String = "",
     val supplier: String = "",
     val documentNumber: String = "",
@@ -56,11 +57,13 @@ data class Transaction(
     val description: String,
     val amountCents: Long,
     val ownership: Ownership,
+    @ColumnInfo(defaultValue = "'EXPENSE'")
     val kind: EntryKind = EntryKind.EXPENSE,
     val paymentMethod: PaymentMethod = PaymentMethod.OTHER,
     val paymentStatus: PaymentStatus = PaymentStatus.PAID,
     val paidAt: Long? = null,
     val dueAt: Long? = null,
+    @ColumnInfo(defaultValue = "0")
     val createdAt: Long = System.currentTimeMillis()
 )
 

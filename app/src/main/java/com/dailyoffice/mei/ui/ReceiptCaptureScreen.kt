@@ -27,7 +27,7 @@ import com.dailyoffice.mei.receipt.ReceiptOcr
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReceiptCaptureScreen(
-    onCaptured: (Uri, String) -> Unit,
+    onCaptured: (Uri, String, String) -> Unit,
     onCancel: () -> Unit
 ) {
     val context = LocalContext.current
@@ -136,12 +136,19 @@ fun ReceiptCaptureScreen(
                                 object : ImageCapture.OnImageSavedCallback {
                                     override fun onImageSaved(result: ImageCapture.OutputFileResults) {
                                         val uri = Uri.fromFile(file)
+                                        val hash = runCatching {
+                                            ReceiptArchive.sha256(context, uri)
+                                        }.getOrElse {
+                                            busy = false
+                                            error = it.message ?: "Não foi possível validar a foto."
+                                            return
+                                        }
                                         ReceiptOcr.read(
                                             context,
                                             uri,
                                             onSuccess = { text ->
                                                 busy = false
-                                                onCaptured(uri, text)
+                                                onCaptured(uri, text, hash)
                                             },
                                             onFailure = {
                                                 busy = false

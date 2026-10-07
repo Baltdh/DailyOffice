@@ -3,11 +3,13 @@ package com.dailyoffice.mei.finance
 import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import java.time.Year
 
 data class MeiConfig(
     val annualLimitCents: Long = 8_100_000L,
     val openingMonth: Int = 8,
-    val proportionalFirstYear: Boolean = true
+    val proportionalFirstYear: Boolean = true,
+    val taxYear: Int = Year.now().value
 )
 
 class MeiSettings(context: Context) {
@@ -17,7 +19,8 @@ class MeiSettings(context: Context) {
         MeiConfig(
             annualLimitCents = prefs.getLong("annualLimitCents", 8_100_000L),
             openingMonth = prefs.getInt("openingMonth", 8),
-            proportionalFirstYear = prefs.getBoolean("proportionalFirstYear", true)
+            proportionalFirstYear = prefs.getBoolean("proportionalFirstYear", true),
+            taxYear = prefs.getInt("taxYear", Year.now().value)
         )
     )
 
@@ -26,12 +29,14 @@ class MeiSettings(context: Context) {
     fun update(config: MeiConfig) {
         val normalized = config.copy(
             annualLimitCents = config.annualLimitCents.coerceAtLeast(0L),
-            openingMonth = config.openingMonth.coerceIn(1, 12)
+            openingMonth = config.openingMonth.coerceIn(1, 12),
+            taxYear = config.taxYear.coerceIn(2000, 2100)
         )
         prefs.edit()
             .putLong("annualLimitCents", normalized.annualLimitCents)
             .putInt("openingMonth", normalized.openingMonth)
             .putBoolean("proportionalFirstYear", normalized.proportionalFirstYear)
+            .putInt("taxYear", normalized.taxYear)
             .apply()
         _state.value = normalized
     }

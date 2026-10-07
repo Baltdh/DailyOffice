@@ -181,21 +181,10 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
 
     val summary = combine(receipts, transactions, accounts) { receiptList, txList, accountList ->
         val totals = FinanceCalculator.summarize(txList)
-        val accountById = accountList.associateBy { it.id }
-        val ownerPaid = txList
-            .filter {
-                it.kind == EntryKind.EXPENSE &&
-                    it.ownership == Ownership.BUSINESS &&
-                    it.paymentStatus == PaymentStatus.PAID
-            }
-            .filter { tx ->
-                when (accountById[tx.accountId]?.kind) {
-                    AccountKind.OWNER_PERSONAL_BANK,
-                    AccountKind.OWNER_PERSONAL_CARD -> true
-                    else -> false
-                }
-            }
-            .sumOf { it.amountCents }
+        val ownerPaid = FinanceCalculator.ownerPaidBusinessExpenses(
+            transactions = txList,
+            accounts = accountList
+        )
 
         DashboardSummary(
             businessExpensesCents = totals.businessExpensesCents,

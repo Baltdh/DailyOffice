@@ -10,6 +10,16 @@ enum class Ownership { BUSINESS, PERSONAL, MIXED, REVIEW }
 enum class PaymentStatus { PAID, PENDING, OVERDUE, CANCELLED }
 enum class PaymentMethod { CASH, PIX, DEBIT, CREDIT, DIGITAL_WALLET, OTHER }
 enum class EntryKind { EXPENSE, REVENUE, CONTRIBUTION, WITHDRAWAL }
+enum class StockUnit { UNIT, GRAM, KILOGRAM, MILLILITER, LITER, PACK }
+enum class StockMovementType {
+    PURCHASE,
+    CONSUMPTION,
+    LOSS,
+    ADJUSTMENT_IN,
+    ADJUSTMENT_OUT,
+    TRANSFER_IN,
+    TRANSFER_OUT
+}
 
 @Entity(
     tableName = "companies",
@@ -21,6 +31,43 @@ data class Company(
     val cnpj: String = "",
     val ownerName: String = "",
     val active: Boolean = true,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+
+@Entity(
+    tableName = "inventory_products",
+    indices = [Index("active"), Index("name")]
+)
+data class InventoryProduct(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val unit: StockUnit = StockUnit.UNIT,
+    val active: Boolean = true,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+@Entity(
+    tableName = "stock_movements",
+    indices = [
+        Index("productId"),
+        Index("companyId"),
+        Index("counterpartyCompanyId"),
+        Index("type"),
+        Index("createdAt"),
+        Index("transferGroupId")
+    ]
+)
+data class StockMovement(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val productId: Long,
+    val companyId: Long,
+    val counterpartyCompanyId: Long? = null,
+    val type: StockMovementType,
+    val quantityMilli: Long,
+    val totalCostCents: Long? = null,
+    val note: String = "",
+    val transferGroupId: String = "",
     val createdAt: Long = System.currentTimeMillis()
 )
 
@@ -126,6 +173,45 @@ interface CompanyDao {
     suspend fun count(): Int
 }
 
+
+@Dao
+interface InventoryProductDao {
+    @Insert
+    suspend fun insert(product: InventoryProduct): Long
+
+    @Update
+    suspend fun update(product: InventoryProduct)
+
+    @Query("SELECT * FROM inventory_products WHERE active = 1 ORDER BY name COLLATE NOCASE ASC")
+    fun observeActive(): Flow<List<InventoryProduct>>
+
+    @Query("SELECT * FROM inventory_products WHERE id = :id LIMIT 1")
+    suspend fun byId(id: Long): InventoryProduct?
+}
+
+@Dao
+interface StockMovementDao {
+    @Insert
+    suspend fun insert(movement: StockMovement): Long
+
+    @Query("SELECT * FROM stock_movements ORDER BY createdAt DESC, id DESC")
+    fun observeAll(): Flow<List<StockMovement>>
+
+    @Query(
+        """
+        SELECT COALESCE(SUM(
+            CASE
+                WHEN type IN ('PURCHASE','ADJUSTMENT_IN','TRANSFER_IN') THEN quantityMilli
+                ELSE -quantityMilli
+            END
+        ), 0)
+        FROM stock_movements
+        WHERE productId = :productId AND companyId = :companyId
+        """
+    )
+    suspend fun balanceFor(productId: Long, companyId: Long): Long
+}
+
 @Dao
 interface ReceiptDao {
     @Insert
@@ -187,13 +273,22 @@ interface TransactionDao {
 }
 
 @Database(
-    entities = [Company::class, Receipt::class, ReceiptItem::class, Transaction::class],
-    version = 5,
+    entities = [
+        Company::class,
+        InventoryProduct::class,
+        StockMovement::class,
+        Receipt::class,
+        ReceiptItem::class,
+        Transaction::class
+    ],
+    version = 6,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
 abstract class DailyOfficeDb : RoomDatabase() {
     abstract fun companyDao(): CompanyDao
+    abstract fun inventoryProductDao(): InventoryProductDao
+    abstract fun stockMovementDao(): StockMovementDao
     abstract fun receiptDao(): ReceiptDao
     abstract fun receiptItemDao(): ReceiptItemDao
     abstract fun transactionDao(): TransactionDao
@@ -291,6 +386,63 @@ abstract class DailyOfficeDb : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS inventory_products (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        name TEXT NOT NULL,
+                        unit TEXT NOT NULL,
+                        active INTEGER NOT NULL,
+                        createdAt INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_inventory_products_active ON inventory_products(active)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_inventory_products_name ON inventory_products(name)"
+                )
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS stock_movements (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        productId INTEGER NOT NULL,
+                        companyId INTEGER NOT NULL,
+                        counterpartyCompanyId INTEGER,
+                        type TEXT NOT NULL,
+                        quantityMilli INTEGER NOT NULL,
+                        totalCostCents INTEGER,
+                        note TEXT NOT NULL,
+                        transferGroupId TEXT NOT NULL,
+                        createdAt INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_stock_movements_productId ON stock_movements(productId)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_stock_movements_companyId ON stock_movements(companyId)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_stock_movements_counterpartyCompanyId ON stock_movements(counterpartyCompanyId)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_stock_movements_type ON stock_movements(type)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_stock_movements_createdAt ON stock_movements(createdAt)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_stock_movements_transferGroupId ON stock_movements(transferGroupId)"
+                )
+            }
+        }
+
         fun get(context: Context): DailyOfficeDb =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -298,7 +450,7 @@ abstract class DailyOfficeDb : RoomDatabase() {
                     DailyOfficeDb::class.java,
                     "dailyoffice.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                     .build()
                     .also { instance = it }
             }
@@ -314,4 +466,8 @@ class Converters {
     @TypeConverter fun stringToStatus(value: String) = PaymentStatus.valueOf(value)
     @TypeConverter fun kindToString(value: EntryKind) = value.name
     @TypeConverter fun stringToKind(value: String) = EntryKind.valueOf(value)
+    @TypeConverter fun stockUnitToString(value: StockUnit) = value.name
+    @TypeConverter fun stringToStockUnit(value: String) = StockUnit.valueOf(value)
+    @TypeConverter fun stockMovementTypeToString(value: StockMovementType) = value.name
+    @TypeConverter fun stringToStockMovementType(value: String) = StockMovementType.valueOf(value)
 }

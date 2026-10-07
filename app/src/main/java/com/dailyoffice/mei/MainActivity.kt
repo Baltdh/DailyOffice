@@ -3,34 +3,45 @@ package com.dailyoffice.mei
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.dailyoffice.mei.ui.HomeScreen
+import com.dailyoffice.mei.ui.ReceiptCaptureScreen
+import com.dailyoffice.mei.ui.ReceiptReviewScreen
+import com.dailyoffice.mei.viewmodel.ReceiptViewModel
 
-class MainActivity: ComponentActivity() {
+private enum class Screen { HOME, CAPTURE, REVIEW }
+
+class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { MaterialTheme { DailyOfficeHome() } }
-    }
-}
+        setContent {
+            MaterialTheme {
+                val vm: ReceiptViewModel = viewModel()
+                var screen by rememberSaveable { mutableStateOf(Screen.HOME) }
 
-@Composable
-fun DailyOfficeHome() {
-    Scaffold(
-        topBar={ TopAppBar(title={Text("DailyOffice • Contador MEI")}) },
-        floatingActionButton={ ExtendedFloatingActionButton(onClick={}, text={Text("Fotografar comprovante")}) }
-    ){ pad ->
-        Column(Modifier.padding(pad).padding(16.dp), verticalArrangement=Arrangement.spacedBy(12.dp)){
-            Text("Visão geral", style=MaterialTheme.typography.headlineSmall)
-            Card { Column(Modifier.padding(16.dp)){ Text("Empresa x pessoal"); Text("Classifique cada comprovante e mantenha a foto original arquivada.") } }
-            Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
-                AssistChip(onClick={}, label={Text("Pendentes")})
-                AssistChip(onClick={}, label={Text("A revisar")})
-                AssistChip(onClick={}, label={Text("Relatório MEI")})
+                when (screen) {
+                    Screen.HOME -> HomeScreen(
+                        viewModel = vm,
+                        onCapture = { screen = Screen.CAPTURE },
+                        onReviewReady = { screen = Screen.REVIEW }
+                    )
+                    Screen.CAPTURE -> ReceiptCaptureScreen(
+                        onCaptured = { uri, text ->
+                            vm.beginReview(uri.toString(), text)
+                            screen = Screen.REVIEW
+                        },
+                        onCancel = { screen = Screen.HOME }
+                    )
+                    Screen.REVIEW -> ReceiptReviewScreen(
+                        viewModel = vm,
+                        onBack = { screen = Screen.HOME },
+                        onSaved = { screen = Screen.HOME }
+                    )
+                }
             }
-            Text("Próxima etapa: câmera + OCR, revisão dos campos, dashboard mensal, débitos e exportação.")
         }
     }
 }

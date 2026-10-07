@@ -1,5 +1,7 @@
 package com.dailyoffice.mei.finance
 
+import com.dailyoffice.mei.data.Account
+import com.dailyoffice.mei.data.AccountKind
 import com.dailyoffice.mei.data.EntryKind
 import com.dailyoffice.mei.data.Ownership
 import com.dailyoffice.mei.data.PaymentStatus
@@ -42,6 +44,65 @@ class FinanceCalculatorTest {
 
         assertEquals(10_000L, result.businessExpensesCents)
         assertEquals(0L, result.revenueCents)
+    }
+
+    @Test
+    fun ownerPaidBusinessExpensesUsePaymentSourceNotExpenseOwnership() {
+        val accounts = listOf(
+            Account(
+                id = 1,
+                companyId = 1,
+                name = "Conta PJ",
+                kind = AccountKind.BUSINESS_BANK
+            ),
+            Account(
+                id = 2,
+                companyId = 1,
+                name = "Cartão pessoal",
+                kind = AccountKind.OWNER_PERSONAL_CARD
+            )
+        )
+        val transactions = listOf(
+            Transaction(
+                accountId = 2,
+                description = "Embalagens",
+                amountCents = 8_749,
+                ownership = Ownership.BUSINESS,
+                kind = EntryKind.EXPENSE,
+                paymentStatus = PaymentStatus.PAID
+            ),
+            Transaction(
+                accountId = 1,
+                description = "Salmão",
+                amountCents = 30_000,
+                ownership = Ownership.BUSINESS,
+                kind = EntryKind.EXPENSE,
+                paymentStatus = PaymentStatus.PAID
+            ),
+            Transaction(
+                accountId = 2,
+                description = "Despesa pessoal",
+                amountCents = 5_000,
+                ownership = Ownership.PERSONAL,
+                kind = EntryKind.EXPENSE,
+                paymentStatus = PaymentStatus.PAID
+            ),
+            Transaction(
+                accountId = 2,
+                description = "Compra ainda pendente",
+                amountCents = 4_000,
+                ownership = Ownership.BUSINESS,
+                kind = EntryKind.EXPENSE,
+                paymentStatus = PaymentStatus.PENDING
+            )
+        )
+
+        val result = FinanceCalculator.ownerPaidBusinessExpenses(
+            transactions,
+            accounts
+        )
+
+        assertEquals(8_749L, result)
     }
 
     @Test

@@ -2,6 +2,7 @@ package com.dailyoffice.mei.receipt
 
 import android.content.Context
 import android.net.Uri
+import androidx.core.content.FileProvider
 import java.io.File
 import java.security.MessageDigest
 import java.util.UUID
@@ -43,6 +44,17 @@ object ReceiptArchive {
         }
 
         return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    fun shareUri(context: Context, uriString: String): Uri {
+        val uri = Uri.parse(uriString)
+        if (uri.scheme != "file") return uri
+        val path = requireNotNull(uri.path) { "Comprovante sem caminho de arquivo." }
+        return FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            File(path)
+        )
     }
 
     fun deleteArchived(uriString: String) {

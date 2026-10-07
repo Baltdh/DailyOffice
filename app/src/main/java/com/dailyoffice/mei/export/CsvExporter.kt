@@ -3,6 +3,7 @@ package com.dailyoffice.mei.export
 import android.content.Context
 import android.net.Uri
 import androidx.core.content.FileProvider
+import com.dailyoffice.mei.data.Account
 import com.dailyoffice.mei.data.Receipt
 import com.dailyoffice.mei.data.Transaction
 import java.io.File
@@ -17,13 +18,16 @@ object CsvExporter {
     fun export(
         context: Context,
         receipts: List<Receipt>,
-        transactions: List<Transaction>
+        transactions: List<Transaction>,
+        accounts: List<Account>
     ): Uri {
         val dir = File(context.cacheDir, "exports").apply { mkdirs() }
         val file = File(dir, "DailyOffice_${System.currentTimeMillis()}.csv")
 
+        val accountById = accounts.associateBy { it.id }
+
         file.bufferedWriter().use { out ->
-            out.appendLine("TIPO;ID;DATA;DESCRICAO;VALOR;CLASSIFICACAO;PAGAMENTO;STATUS;DOCUMENTO;CATEGORIA;COMPROVANTE_ID")
+            out.appendLine("TIPO;ID;DATA;DESCRICAO;VALOR;CLASSIFICACAO;PAGAMENTO;STATUS;CONTA;DOCUMENTO;CATEGORIA;COMPROVANTE_ID;ENTRA_NO_FLUXO")
 
             receipts.forEach { receipt ->
                 out.appendLine(
@@ -36,9 +40,11 @@ object CsvExporter {
                         receipt.ownership.name,
                         receipt.paymentMethod.name,
                         receipt.paymentStatus.name,
+                        accountById[receipt.accountId]?.name.orEmpty(),
                         receipt.documentNumber,
                         receipt.category,
-                        receipt.id.toString()
+                        receipt.id.toString(),
+                        "NAO"
                     ).joinToString(";") { cell(it) }
                 )
             }
@@ -54,9 +60,11 @@ object CsvExporter {
                         tx.ownership.name,
                         tx.paymentMethod.name,
                         tx.paymentStatus.name,
+                        accountById[tx.accountId]?.name.orEmpty(),
                         "",
                         "",
-                        tx.receiptId?.toString().orEmpty()
+                        tx.receiptId?.toString().orEmpty(),
+                        "SIM"
                     ).joinToString(";") { cell(it) }
                 )
             }

@@ -76,5 +76,5 @@ object CsvExporter {
         "%.2f".format(java.util.Locale.US, cents / 100.0)
 
     private fun cell(value: String): String =
-        ""${value.replace(""", """")}""
+        "\"" + value.replace("\"", "\"\"") + "\""
 }

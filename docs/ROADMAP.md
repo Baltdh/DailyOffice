@@ -19,7 +19,8 @@
 - [ ] corte e rotação assistidos
 - [ ] múltiplas páginas no mesmo comprovante
 - [x] leitura inicial de itens individuais e classificação Empresa/Pessoal
-- [ ] melhoria de OCR para cupons longos, descontos, quantidades e impressões fracas
+- [x] leitura inicial de quantidade para integração com estoque
+- [ ] melhoria de OCR para cupons longos, descontos complexos e impressões fracas
 
 ## M3 — Contador MEI — em andamento
 - [x] despesas empresariais e pessoais
@@ -53,7 +54,8 @@
 - [ ] contas bancárias/fontes de pagamento por empresa
 - [x] estoque físico com propriedade por CNPJ
 - [x] transferência interna de estoque entre empresas com histórico
-- [ ] vínculo da transferência com documento fiscal/comprovante
+- [x] vínculo de compras do comprovante com entradas de estoque
+- [ ] vínculo da transferência entre empresas com documento fiscal/comprovante
 - [x] histórico auditável de movimentações de estoque
 - [ ] relatório consolidado sem misturar os livros de cada CNPJ
 

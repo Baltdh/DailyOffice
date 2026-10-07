@@ -84,6 +84,9 @@ interface ReceiptDao {
     @Query("SELECT * FROM receipts WHERE imageSha256 = :hash AND imageSha256 != '' LIMIT 1")
     suspend fun findByHash(hash: String): Receipt?
 
+    @Query("SELECT * FROM receipts WHERE imageSha256 = ''")
+    suspend fun withoutHash(): List<Receipt>
+
     @Query("SELECT * FROM receipts WHERE ownership = 'REVIEW' ORDER BY createdAt DESC")
     fun observeReviewQueue(): Flow<List<Receipt>>
 

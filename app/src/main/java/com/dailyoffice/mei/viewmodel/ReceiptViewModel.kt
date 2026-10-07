@@ -10,6 +10,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.room.withTransaction
 import com.dailyoffice.mei.data.*
 import com.dailyoffice.mei.export.CsvExporter
+import com.dailyoffice.mei.finance.FinanceCalculator
 import com.dailyoffice.mei.finance.MeiCalculator
 import com.dailyoffice.mei.finance.MeiConfig
 import com.dailyoffice.mei.finance.MeiProjection
@@ -87,32 +88,15 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
     val meiConfig = meiSettings.state
 
     val summary = combine(receipts, transactions) { receiptList, txList ->
+        val totals = FinanceCalculator.summarize(txList)
         DashboardSummary(
-            businessExpensesCents = txList
-                .filter { it.kind == EntryKind.EXPENSE && it.ownership == Ownership.BUSINESS }
-                .sumOf { it.amountCents },
-            personalExpensesCents = txList
-                .filter { it.kind == EntryKind.EXPENSE && it.ownership == Ownership.PERSONAL }
-                .sumOf { it.amountCents },
-            revenueCents = txList
-                .filter { it.kind == EntryKind.REVENUE }
-                .sumOf { it.amountCents },
-            contributionCents = txList
-                .filter { it.kind == EntryKind.CONTRIBUTION }
-                .sumOf { it.amountCents },
-            withdrawalCents = txList
-                .filter { it.kind == EntryKind.WITHDRAWAL }
-                .sumOf { it.amountCents },
-            pendingCents = txList.filter {
-                it.kind == EntryKind.EXPENSE &&
-                    (it.paymentStatus == PaymentStatus.PENDING ||
-                        it.paymentStatus == PaymentStatus.OVERDUE)
-            }.sumOf { it.amountCents },
-            receivableCents = txList.filter {
-                it.kind == EntryKind.REVENUE &&
-                    (it.paymentStatus == PaymentStatus.PENDING ||
-                        it.paymentStatus == PaymentStatus.OVERDUE)
-            }.sumOf { it.amountCents },
+            businessExpensesCents = totals.businessExpensesCents,
+            personalExpensesCents = totals.personalExpensesCents,
+            revenueCents = totals.revenueCents,
+            contributionCents = totals.contributionCents,
+            withdrawalCents = totals.withdrawalCents,
+            pendingCents = totals.pendingCents,
+            receivableCents = totals.receivableCents,
             reviewCount = receiptList.count { it.ownership == Ownership.REVIEW },
             receiptCount = receiptList.size
         )
@@ -123,9 +107,10 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
     )
 
     val meiProjection: StateFlow<MeiProjection> = combine(transactions, meiConfig) { txList, config ->
-        val revenue = txList
-            .filter { it.kind == EntryKind.REVENUE }
-            .sumOf { it.amountCents }
+        val revenue = FinanceCalculator.revenueForYear(
+            transactions = txList,
+            year = config.taxYear
+        )
 
         MeiCalculator.calculate(
             revenueCents = revenue,
@@ -504,7 +489,7 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
                     transactionDao.deleteByReceiptId(receiptId)
                     val txDate = receipt.issuedAt ?: receipt.createdAt
 
-                    if (business > 0) {
+                    if (receipt.paymentStatus != PaymentStatus.CANCELLED && business > 0) {
                         transactionDao.insert(
                             Transaction(
                                 receiptId = receiptId,
@@ -523,7 +508,7 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
                         )
                     }
 
-                    if (personal > 0) {
+                    if (receipt.paymentStatus != PaymentStatus.CANCELLED && personal > 0) {
                         transactionDao.insert(
                             Transaction(
                                 receiptId = receiptId,
@@ -659,6 +644,7 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
         annualLimit: String,
         openingMonth: String,
         firstYear: Boolean,
+        taxYear: String,
         onError: (String) -> Unit = {}
     ) {
         val limit = parseCents(annualLimit)
@@ -671,11 +657,19 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
             return onError("O mês de abertura deve estar entre 1 e 12.")
         }
 
+        val year = taxYear.toIntOrNull()
+            ?: return onError("Informe um ano fiscal válido.")
+
+        if (year !in 2000..2100) {
+            return onError("O ano fiscal deve estar entre 2000 e 2100.")
+        }
+
         meiSettings.update(
             MeiConfig(
                 annualLimitCents = limit,
                 openingMonth = month,
-                proportionalFirstYear = firstYear
+                proportionalFirstYear = firstYear,
+                taxYear = year
             )
         )
     }

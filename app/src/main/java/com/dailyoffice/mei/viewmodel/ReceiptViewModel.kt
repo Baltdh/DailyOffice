@@ -461,7 +461,14 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
         if (index !in draft.items.indices) return
 
         val updated = draft.items.toMutableList()
-        updated[index] = updated[index].copy(ownership = ownership)
+        updated[index] = updated[index].copy(
+            ownership = ownership,
+            addToStock = if (ownership == Ownership.BUSINESS) {
+                updated[index].addToStock
+            } else {
+                false
+            }
+        )
         draft = draft.copy(items = updated)
     }
 
@@ -485,10 +492,7 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
         if (index !in draft.items.indices) return
 
         val updated = draft.items.toMutableList()
-        updated[index] = updated[index].copy(
-            addToStock = enabled,
-            stockProductId = if (enabled) updated[index].stockProductId else null
-        )
+        updated[index] = updated[index].copy(addToStock = enabled)
         draft = draft.copy(items = updated)
     }
 

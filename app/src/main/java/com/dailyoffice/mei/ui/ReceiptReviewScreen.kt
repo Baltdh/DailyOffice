@@ -344,6 +344,51 @@ fun ReceiptReviewScreen(
             )
 
             Text(
+                "Conta / origem do pagamento",
+                style = MaterialTheme.typography.titleMedium
+            )
+            Text(
+                "A classificação da compra e a origem do pagamento são controles separados.",
+                style = MaterialTheme.typography.bodySmall
+            )
+
+            if (accounts.isEmpty()) {
+                Text(
+                    "Nenhuma conta cadastrada para esta empresa.",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            } else {
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    accounts.forEach { account ->
+                        FilterChip(
+                            selected = d.accountId == account.id,
+                            onClick = { viewModel.updateAccount(account.id) },
+                            label = { Text(account.name) }
+                        )
+                    }
+                }
+            }
+
+            val selectedAccount = accounts.firstOrNull { it.id == d.accountId }
+            if (
+                d.ownership == Ownership.BUSINESS &&
+                selectedAccount != null &&
+                (
+                    selectedAccount.kind == AccountKind.OWNER_PERSONAL_BANK ||
+                        selectedAccount.kind == AccountKind.OWNER_PERSONAL_CARD
+                )
+            ) {
+                Text(
+                    "Despesa da empresa paga pelo titular.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+
+            Text(
                 "Situação",
                 style = MaterialTheme.typography.titleMedium
             )

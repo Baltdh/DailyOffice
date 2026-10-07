@@ -35,6 +35,24 @@ class ReceiptParserTest {
     }
 
     @Test
+    fun parsesQuantityForInventory() {
+        val text = """
+            PEIXARIA TESTE
+            SALMAO 1,500 kg 103,50
+            EMBALAGEM 2 x 5,00 10,00
+            VALOR TOTAL R$ 113,50
+        """.trimIndent()
+
+        val parsed = ReceiptParser.parse(text)
+
+        assertEquals(2, parsed.items.size)
+        assertEquals(1_500L, parsed.items[0].quantityMilli)
+        assertEquals("kg", parsed.items[0].unitHint)
+        assertEquals(2_000L, parsed.items[1].quantityMilli)
+        assertEquals("un", parsed.items[1].unitHint)
+    }
+
+    @Test
     fun parsesLineItemsAndIgnoresReceiptTotal() {
         val text = """
             MERCADO TESTE

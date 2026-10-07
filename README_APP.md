@@ -2,25 +2,45 @@
 
 Aplicativo Android local-first para fotografar e arquivar comprovantes, extrair dados por OCR e organizar finanças pessoais e empresariais.
 
-## Fluxo
-1. Fotografar/importar comprovante.
+## Estado atual — v0.3.0
+
+O DailyOffice já possui:
+
+- câmera integrada para fotografar comprovantes;
+- importação de imagens da galeria;
+- arquivo privado das fotos originais;
+- OCR no aparelho com ML Kit;
+- leitura sugerida de fornecedor, data, total e número do documento;
+- classificação Empresa, Pessoal, Misto ou Revisar;
+- separação obrigatória da parte empresarial e pessoal nas compras mistas;
+- forma de pagamento e estados Pago, Pendente, Vencido ou Cancelado;
+- busca e filtros de comprovantes;
+- visualização, edição e exclusão dos comprovantes arquivados;
+- assinatura SHA-256 para detectar fotos duplicadas;
+- lançamentos manuais de Receita, Despesa, Aporte e Retirada;
+- painel financeiro com pendências;
+- acompanhamento configurável do limite MEI;
+- exportação dos dados em CSV;
+- migração do banco da v0.2 para v0.3 sem apagar os dados.
+
+## Fluxo de comprovantes
+
+1. Fotografar ou importar.
 2. Preservar a imagem original.
-3. OCR no aparelho.
-4. Sugerir fornecedor, data, total e número do documento.
-5. Usuário confirma/corrige.
-6. Classificar: Empresa, Pessoal, Misto ou Revisar.
-7. Registrar forma de pagamento e status: Pago, Pendente, Vencido ou Cancelado.
-8. Dashboard mensal e relatório MEI.
+3. Calcular SHA-256 e impedir duplicatas.
+4. Executar OCR no aparelho.
+5. Sugerir fornecedor, data, total e documento.
+6. Sugerir classificação.
+7. Usuário confirma ou corrige.
+8. Salvar no Room e criar os lançamentos financeiros relacionados.
 
-## Escopo planejado
-- Cofre de comprovantes com busca e filtros.
-- OCR offline-first.
-- Despesas, receitas, aportes/retiradas e contas a pagar.
-- Divisão de uma compra mista em itens pessoais/empresa.
-- Alertas de vencimento.
-- Faturamento mensal/anual e acompanhamento do limite MEI.
-- Relatório Mensal de Receitas Brutas e exportação PDF/CSV/backup.
-- Importação futura de extratos e conciliação sem duplicar lançamentos.
-- Auditoria: nunca apagar a foto original ao editar os dados extraídos.
+## Princípios
 
-> O app auxilia a organização; não substitui orientação contábil/fiscal profissional.
+- O OCR nunca deve ser tratado como verdade absoluta.
+- Uma compra mista só é salva se Empresa + Pessoal = Total.
+- A foto original é preservada até o usuário excluir explicitamente o comprovante.
+- Aporte não é receita.
+- Retirada não é despesa operacional.
+- O faturamento usado no limite MEI vem de lançamentos de Receita, não de aportes.
+
+> O aplicativo auxilia a organização financeira e documental. Ele não substitui orientação contábil ou fiscal profissional.

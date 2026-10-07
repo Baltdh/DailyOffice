@@ -31,8 +31,10 @@ fun FinanceScreen(
     val config by viewModel.meiConfig.collectAsStateWithLifecycle()
     val transactions by viewModel.transactions.collectAsStateWithLifecycle()
     val activeCompany by viewModel.activeCompany.collectAsStateWithLifecycle()
+    val accounts by viewModel.accounts.collectAsStateWithLifecycle()
 
     var addingKind by remember { mutableStateOf<EntryKind?>(null) }
+    var showAccountDialog by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var annualLimit by rememberSaveable { mutableStateOf("") }
     var openingMonth by rememberSaveable { mutableStateOf("") }
@@ -103,6 +105,48 @@ fun FinanceScreen(
                         money(summary.receivableCents),
                         Modifier.weight(1f)
                     )
+                }
+            }
+
+            item {
+                FinanceMetric(
+                    "Pago pelo titular",
+                    money(summary.ownerPaidBusinessExpensesCents),
+                    Modifier.fillMaxWidth()
+                )
+                Text(
+                    "Despesas da empresa pagas por conta ou cartão pessoal do titular.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+
+            item {
+                Card(Modifier.fillMaxWidth()) {
+                    Column(
+                        Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            "Contas e origem do dinheiro",
+                            style = MaterialTheme.typography.titleLarge
+                        )
+                        Text(
+                            "A forma de pagamento (Pix, débito, cartão) é diferente da conta que forneceu ou recebeu o dinheiro.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        accounts.forEach { account ->
+                            Text(
+                                "• ${account.name} — ${accountKindLabel(account.kind)}",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                        OutlinedButton(
+                            onClick = { showAccountDialog = true },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Adicionar conta")
+                        }
+                    }
                 }
             }
 
@@ -231,6 +275,7 @@ fun FinanceScreen(
                 items(recent, key = { it.id }) { tx ->
                     TransactionCard(
                         transaction = tx,
+                        accountName = accounts.firstOrNull { it.id == tx.accountId }?.name,
                         onDelete = if (tx.receiptId == null) {
                             {
                                 viewModel.deleteManualEntry(
@@ -250,8 +295,9 @@ fun FinanceScreen(
     addingKind?.let { kind ->
         AddEntryDialog(
             kind = kind,
+            accounts = accounts,
             onDismiss = { addingKind = null },
-            onSave = { description, amount, ownership, method, status, date, due ->
+            onSave = { description, amount, ownership, method, status, accountId, date, due ->
                 viewModel.addManualEntry(
                     description = description,
                     amount = amount,
@@ -259,11 +305,29 @@ fun FinanceScreen(
                     ownership = ownership,
                     paymentMethod = method,
                     paymentStatus = status,
+                    accountId = accountId,
                     date = date,
                     dueDate = due,
                     onSaved = {
                         error = null
                         addingKind = null
+                    },
+                    onError = { error = it }
+                )
+            }
+        )
+    }
+
+    if (showAccountDialog) {
+        AddAccountDialog(
+            onDismiss = { showAccountDialog = false },
+            onSave = { name, kind ->
+                viewModel.addAccount(
+                    name = name,
+                    kind = kind,
+                    onSaved = {
+                        showAccountDialog = false
+                        error = null
                     },
                     onError = { error = it }
                 )

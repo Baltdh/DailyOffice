@@ -26,7 +26,7 @@ fun ReceiptReviewScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Conferir comprovante") },
+                title = { Text(if (viewModel.isEditing) "Editar comprovante" else "Conferir comprovante") },
                 navigationIcon = { TextButton(onClick = onBack) { Text("Voltar") } }
             )
         }
@@ -181,7 +181,13 @@ fun ReceiptReviewScreen(
                 enabled = !viewModel.saving,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text(if (viewModel.saving) "Salvando..." else "Arquivar comprovante")
+                Text(
+                    when {
+                        viewModel.saving -> "Salvando..."
+                        viewModel.isEditing -> "Salvar alterações"
+                        else -> "Arquivar comprovante"
+                    }
+                )
             }
 
             Spacer(Modifier.height(24.dp))

@@ -24,23 +24,23 @@ object ReceiptArchive {
 
     fun sha256(context: Context, uri: Uri): String {
         val digest = MessageDigest.getInstance("SHA-256")
-        context.contentResolver.openInputStream(uri)?.use { input ->
+        val input = if (uri.scheme == "file") {
+            val path = requireNotNull(uri.path) { "Arquivo do comprovante sem caminho." }
+            File(path).inputStream()
+        } else {
+            requireNotNull(context.contentResolver.openInputStream(uri)) {
+                "Não foi possível abrir o comprovante para calcular a assinatura."
+            }
+        }
+
+        input.use { stream ->
             val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
             while (true) {
-                val read = input.read(buffer)
+                val read = stream.read(buffer)
                 if (read <= 0) break
                 digest.update(buffer, 0, read)
             }
-        } ?: uri.path?.let { path ->
-            File(path).inputStream().use { input ->
-                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                while (true) {
-                    val read = input.read(buffer)
-                    if (read <= 0) break
-                    digest.update(buffer, 0, read)
-                }
-            }
-        } ?: error("Não foi possível calcular a assinatura do comprovante.")
+        }
 
         return digest.digest().joinToString("") { "%02x".format(it) }
     }

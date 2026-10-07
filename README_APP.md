@@ -2,7 +2,7 @@
 
 Aplicativo Android local-first para fotografar e arquivar comprovantes, extrair dados por OCR e organizar finanças pessoais e empresariais.
 
-## Estado atual — v0.5.0
+## Estado atual — v0.6.0
 
 O DailyOffice já possui:
 
@@ -26,6 +26,10 @@ O DailyOffice já possui:
 - faturamento do MEI limitado ao ano selecionado;
 - múltiplas empresas/CNPJs no mesmo aplicativo;
 - troca da empresa ativa com finanças, comprovantes e configuração MEI isolados;
+- estoque físico compartilhado com saldo de propriedade separado por empresa;
+- entradas, consumo, perdas e ajustes de estoque;
+- transferências de estoque entre empresas com lançamento espelhado de saída/entrada;
+- histórico auditável das movimentações de estoque;
 - exportação dos dados da empresa ativa em CSV;
 - migrações do banco preservando os dados de versões anteriores.
 
@@ -51,5 +55,6 @@ O DailyOffice já possui:
 - Retirada não é despesa operacional.
 - O faturamento usado no limite MEI vem de lançamentos de Receita do ano fiscal selecionado.
 - Dados de empresas diferentes não devem ser somados automaticamente.
+- Transferência de estoque no app é controle interno e não substitui documentação fiscal eventualmente exigida entre CNPJs.
 
 > O aplicativo auxilia a organização financeira e documental. Ele não substitui orientação contábil ou fiscal profissional.

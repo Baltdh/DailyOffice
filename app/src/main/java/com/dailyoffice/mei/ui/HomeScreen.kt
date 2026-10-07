@@ -123,16 +123,24 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     MetricCard(
-                        "Pessoal",
-                        money(summary.personalExpensesCents),
-                        Modifier.weight(1f)
-                    )
-                    MetricCard(
                         "Pendentes",
                         money(summary.pendingCents),
                         Modifier.weight(1f)
                     )
+                    MetricCard(
+                        "A receber",
+                        money(summary.receivableCents),
+                        Modifier.weight(1f)
+                    )
                 }
+            }
+
+            item {
+                MetricCard(
+                    "Gastos pessoais identificados",
+                    money(summary.personalExpensesCents),
+                    Modifier.fillMaxWidth()
+                )
             }
 
             item {

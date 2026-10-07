@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dailyoffice.mei.data.Company
 import com.dailyoffice.mei.data.InventoryProduct
+import com.dailyoffice.mei.data.StockMovement
 import com.dailyoffice.mei.data.StockMovementType
 import com.dailyoffice.mei.data.StockUnit
 import com.dailyoffice.mei.inventory.InventoryBalance
@@ -29,6 +30,7 @@ fun InventoryScreen(
     val activeCompany by viewModel.activeCompany.collectAsStateWithLifecycle()
     val companies by viewModel.companies.collectAsStateWithLifecycle()
     val balances by viewModel.inventoryBalances.collectAsStateWithLifecycle()
+    val movements by viewModel.stockMovements.collectAsStateWithLifecycle()
 
     var message by remember { mutableStateOf<String?>(null) }
     var showNewProduct by remember { mutableStateOf(false) }
@@ -147,6 +149,36 @@ fun InventoryScreen(
                         onTransfer = {
                             transferTarget = balance.product
                         }
+                    )
+                }
+            }
+
+            val activeMovements = movements
+                .filter { it.companyId == activeCompany?.id }
+                .take(25)
+
+            item {
+                Text(
+                    "Movimentações recentes",
+                    style = MaterialTheme.typography.titleLarge
+                )
+            }
+
+            if (activeMovements.isEmpty()) {
+                item {
+                    Text(
+                        "Nenhuma movimentação registrada para esta empresa.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            } else {
+                items(activeMovements, key = { "movement-${it.id}" }) { movement ->
+                    StockMovementCard(
+                        movement = movement,
+                        product = balances
+                            .firstOrNull { it.product.id == movement.productId }
+                            ?.product,
+                        companies = companies
                     )
                 }
             }
@@ -438,6 +470,11 @@ private fun TransferStockDialog(
                     "A transferência reduz o saldo da empresa atual e aumenta o saldo da empresa de destino sem alterar o estoque físico total.",
                     style = MaterialTheme.typography.bodySmall
                 )
+                Text(
+                    "Este registro é controle interno e não substitui eventual documento fiscal exigido para a operação entre CNPJs.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
 
                 Text("Empresa de destino")
                 companies.forEach { company ->
@@ -485,6 +522,62 @@ private fun TransferStockDialog(
             TextButton(onClick = onDismiss) { Text("Cancelar") }
         }
     )
+}
+
+@Composable
+private fun StockMovementCard(
+    movement: StockMovement,
+    product: InventoryProduct?,
+    companies: List<Company>
+) {
+    val signed = when (movement.type) {
+        StockMovementType.PURCHASE,
+        StockMovementType.ADJUSTMENT_IN,
+        StockMovementType.TRANSFER_IN -> movement.quantityMilli
+        else -> -movement.quantityMilli
+    }
+
+    val label = when (movement.type) {
+        StockMovementType.PURCHASE -> "Entrada"
+        StockMovementType.CONSUMPTION -> "Consumo"
+        StockMovementType.LOSS -> "Perda"
+        StockMovementType.ADJUSTMENT_IN -> "Ajuste +"
+        StockMovementType.ADJUSTMENT_OUT -> "Ajuste -"
+        StockMovementType.TRANSFER_IN -> "Transferência recebida"
+        StockMovementType.TRANSFER_OUT -> "Transferência enviada"
+    }
+
+    val counterparty = movement.counterpartyCompanyId?.let { id ->
+        companies.firstOrNull { it.id == id }?.name
+    }
+
+    Card(Modifier.fillMaxWidth()) {
+        Column(
+            Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            Text(
+                product?.name ?: "Produto #${movement.productId}",
+                style = MaterialTheme.typography.titleMedium
+            )
+            Text(
+                "$label • ${if (signed >= 0) "+" else ""}${formatQuantity(signed)} " +
+                    unitLabel(product?.unit ?: StockUnit.UNIT)
+            )
+            counterparty?.let {
+                Text(
+                    "Outra empresa: $it",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+            if (movement.note.isNotBlank()) {
+                Text(
+                    movement.note,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
+    }
 }
 
 private fun unitLabel(unit: StockUnit): String =

@@ -9,6 +9,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.dailyoffice.mei.data.AccountKind
 import com.dailyoffice.mei.data.Ownership
 import com.dailyoffice.mei.data.PaymentMethod
 import com.dailyoffice.mei.data.PaymentStatus
@@ -27,6 +28,7 @@ fun ReceiptReviewScreen(
     val d = viewModel.draft
     val activeCompany by viewModel.activeCompany.collectAsStateWithLifecycle()
     val inventoryProducts by viewModel.inventoryProducts.collectAsStateWithLifecycle()
+    val accounts by viewModel.accounts.collectAsStateWithLifecycle()
     var error by remember { mutableStateOf<String?>(null) }
 
     Scaffold(

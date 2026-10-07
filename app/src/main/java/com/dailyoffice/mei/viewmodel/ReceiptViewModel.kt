@@ -29,6 +29,14 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
+data class ReceiptItemDraft(
+    val description: String,
+    val amountCents: Long,
+    val ownership: Ownership = Ownership.REVIEW,
+    val confidence: Float = 0f,
+    val lineIndex: Int = 0
+)
+
 data class ReceiptDraft(
     val imageUri: String = "",
     val imageSha256: String = "",
@@ -47,7 +55,8 @@ data class ReceiptDraft(
     val rawOcr: String = "",
     val confidence: Float = 0f,
     val classificationReason: String = "",
-    val warnings: List<String> = emptyList()
+    val warnings: List<String> = emptyList(),
+    val items: List<ReceiptItemDraft> = emptyList()
 )
 
 data class DashboardSummary(
@@ -65,6 +74,7 @@ data class DashboardSummary(
 class ReceiptViewModel(application: Application) : AndroidViewModel(application) {
     private val db = DailyOfficeDb.get(application)
     private val dao = db.receiptDao()
+    private val itemDao = db.receiptItemDao()
     private val transactionDao = db.transactionDao()
     private val meiSettings = MeiSettings(application)
 
@@ -84,9 +94,15 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
             personalExpensesCents = txList
                 .filter { it.kind == EntryKind.EXPENSE && it.ownership == Ownership.PERSONAL }
                 .sumOf { it.amountCents },
-            revenueCents = txList.filter { it.kind == EntryKind.REVENUE }.sumOf { it.amountCents },
-            contributionCents = txList.filter { it.kind == EntryKind.CONTRIBUTION }.sumOf { it.amountCents },
-            withdrawalCents = txList.filter { it.kind == EntryKind.WITHDRAWAL }.sumOf { it.amountCents },
+            revenueCents = txList
+                .filter { it.kind == EntryKind.REVENUE }
+                .sumOf { it.amountCents },
+            contributionCents = txList
+                .filter { it.kind == EntryKind.CONTRIBUTION }
+                .sumOf { it.amountCents },
+            withdrawalCents = txList
+                .filter { it.kind == EntryKind.WITHDRAWAL }
+                .sumOf { it.amountCents },
             pendingCents = txList.filter {
                 it.kind == EntryKind.EXPENSE &&
                     (it.paymentStatus == PaymentStatus.PENDING ||
@@ -107,7 +123,10 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
     )
 
     val meiProjection: StateFlow<MeiProjection> = combine(transactions, meiConfig) { txList, config ->
-        val revenue = txList.filter { it.kind == EntryKind.REVENUE }.sumOf { it.amountCents }
+        val revenue = txList
+            .filter { it.kind == EntryKind.REVENUE }
+            .sumOf { it.amountCents }
+
         MeiCalculator.calculate(
             revenueCents = revenue,
             annualLimitCents = config.annualLimitCents,
@@ -153,8 +172,64 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
         editingCreatedAt = null
 
         val parsed = ReceiptParser.parse(rawText)
-        val suggestion = ClassificationEngine.suggest(rawText, parsed.supplier)
+        val overallSuggestion = ClassificationEngine.suggest(rawText, parsed.supplier)
         val amount = parsed.totalCents?.let(::formatCents).orEmpty()
+
+        val itemDrafts = parsed.items.map { item ->
+            val suggestion = ClassificationEngine.suggestItem(item.description)
+            ReceiptItemDraft(
+                description = item.description,
+                amountCents = item.amountCents,
+                ownership = suggestion.ownership,
+                confidence = item.confidence,
+                lineIndex = item.lineIndex
+            )
+        }
+
+        val autoSplit = exactItemSplit(itemDrafts, parsed.totalCents)
+
+        val autoOwnership = when {
+            autoSplit == null -> overallSuggestion.ownership
+            autoSplit.first > 0 && autoSplit.second > 0 -> Ownership.MIXED
+            autoSplit.first > 0 -> Ownership.BUSINESS
+            autoSplit.second > 0 -> Ownership.PERSONAL
+            else -> overallSuggestion.ownership
+        }
+
+        val businessAmount = when {
+            autoSplit != null && autoSplit.first > 0 -> formatCents(autoSplit.first)
+            autoOwnership == Ownership.BUSINESS -> amount
+            else -> ""
+        }
+
+        val personalAmount = when {
+            autoSplit != null && autoSplit.second > 0 -> formatCents(autoSplit.second)
+            autoOwnership == Ownership.PERSONAL -> amount
+            else -> ""
+        }
+
+        val itemWarnings = buildList {
+            if (itemDrafts.isNotEmpty() && autoSplit == null) {
+                val reviewCount = itemDrafts.count { it.ownership == Ownership.REVIEW }
+                if (reviewCount > 0) {
+                    add("$reviewCount item(ns) ainda precisam ser classificados.")
+                }
+
+                val itemTotal = itemDrafts.sumOf { it.amountCents }
+                if (parsed.totalCents != null && itemTotal != parsed.totalCents) {
+                    add(
+                        "A soma dos itens reconhecidos (${formatCents(itemTotal)}) " +
+                            "não fecha com o total (${formatCents(parsed.totalCents)})."
+                    )
+                }
+            }
+        }
+
+        val reason = if (autoSplit != null && itemDrafts.isNotEmpty()) {
+            "Divisão sugerida automaticamente a partir dos itens reconhecidos."
+        } else {
+            overallSuggestion.reason
+        }
 
         draft = ReceiptDraft(
             imageUri = imageUri,
@@ -163,19 +238,21 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
             documentNumber = parsed.document.orEmpty(),
             date = parsed.date.orEmpty(),
             total = amount,
-            businessAmount = if (suggestion.ownership == Ownership.BUSINESS) amount else "",
-            personalAmount = if (suggestion.ownership == Ownership.PERSONAL) amount else "",
-            ownership = suggestion.ownership,
+            businessAmount = businessAmount,
+            personalAmount = personalAmount,
+            ownership = autoOwnership,
             rawOcr = rawText,
             confidence = parsed.confidence,
-            classificationReason = suggestion.reason,
-            warnings = parsed.warnings
+            classificationReason = reason,
+            warnings = parsed.warnings + itemWarnings,
+            items = itemDrafts
         )
     }
 
     fun beginEdit(receipt: Receipt) {
         editingReceiptId = receipt.id
         editingCreatedAt = receipt.createdAt
+
         draft = ReceiptDraft(
             imageUri = receipt.imageUri,
             imageSha256 = receipt.imageSha256,
@@ -183,8 +260,12 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
             documentNumber = receipt.documentNumber,
             date = formatDate(receipt.issuedAt),
             total = formatCents(receipt.totalCents),
-            businessAmount = if (receipt.businessCents > 0) formatCents(receipt.businessCents) else "",
-            personalAmount = if (receipt.personalCents > 0) formatCents(receipt.personalCents) else "",
+            businessAmount = if (receipt.businessCents > 0) {
+                formatCents(receipt.businessCents)
+            } else "",
+            personalAmount = if (receipt.personalCents > 0) {
+                formatCents(receipt.personalCents)
+            } else "",
             ownership = receipt.ownership,
             paymentMethod = receipt.paymentMethod,
             paymentStatus = receipt.paymentStatus,
@@ -196,6 +277,25 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
             classificationReason = "Editando comprovante arquivado.",
             warnings = emptyList()
         )
+
+        viewModelScope.launch(Dispatchers.IO) {
+            val storedItems = itemDao.byReceiptId(receipt.id)
+            val drafts = storedItems.map { item ->
+                ReceiptItemDraft(
+                    description = item.description,
+                    amountCents = item.amountCents,
+                    ownership = item.ownership,
+                    confidence = item.confidence,
+                    lineIndex = item.lineIndex
+                )
+            }
+
+            withContext(Dispatchers.Main) {
+                if (editingReceiptId == receipt.id) {
+                    draft = draft.copy(items = drafts)
+                }
+            }
+        }
     }
 
     fun importReceipt(uri: Uri, onReady: () -> Unit, onError: (String) -> Unit) {
@@ -204,10 +304,12 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
                 val archived = ReceiptArchive.archiveImported(getApplication(), uri)
                 val hash = ReceiptArchive.sha256(getApplication(), archived)
                 val existing = dao.findByHash(hash)
+
                 if (existing != null) {
                     ReceiptArchive.deleteArchived(archived.toString())
                     error("Este comprovante já está arquivado.")
                 }
+
                 archived to hash
             }.onSuccess { (archived, hash) ->
                 withContext(Dispatchers.Main) {
@@ -241,14 +343,81 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
     fun updateOwnership(v: Ownership) {
         val total = draft.total
         draft = when (v) {
-            Ownership.BUSINESS -> draft.copy(ownership = v, businessAmount = total, personalAmount = "")
-            Ownership.PERSONAL -> draft.copy(ownership = v, businessAmount = "", personalAmount = total)
+            Ownership.BUSINESS -> draft.copy(
+                ownership = v,
+                businessAmount = total,
+                personalAmount = ""
+            )
+            Ownership.PERSONAL -> draft.copy(
+                ownership = v,
+                businessAmount = "",
+                personalAmount = total
+            )
             else -> draft.copy(ownership = v)
         }
     }
 
-    fun updatePaymentMethod(v: PaymentMethod) { draft = draft.copy(paymentMethod = v) }
-    fun updatePaymentStatus(v: PaymentStatus) { draft = draft.copy(paymentStatus = v) }
+    fun updateItemOwnership(index: Int, ownership: Ownership) {
+        if (index !in draft.items.indices) return
+
+        val updated = draft.items.toMutableList()
+        updated[index] = updated[index].copy(ownership = ownership)
+        draft = draft.copy(items = updated)
+    }
+
+    fun applyItemSplit(): String? {
+        val total = parseCents(draft.total)
+            ?: return "Informe um valor total válido antes de aplicar a divisão."
+
+        if (draft.items.isEmpty()) {
+            return "Nenhum item individual foi identificado."
+        }
+
+        if (draft.items.any {
+                it.ownership == Ownership.REVIEW ||
+                    it.ownership == Ownership.MIXED
+            }) {
+            return "Classifique todos os itens como Empresa ou Pessoal antes de aplicar."
+        }
+
+        val itemTotal = draft.items.sumOf { it.amountCents }
+        if (itemTotal != total) {
+            return "A soma dos itens (${formatCents(itemTotal)}) não é igual ao total (${formatCents(total)})."
+        }
+
+        val business = draft.items
+            .filter { it.ownership == Ownership.BUSINESS }
+            .sumOf { it.amountCents }
+
+        val personal = draft.items
+            .filter { it.ownership == Ownership.PERSONAL }
+            .sumOf { it.amountCents }
+
+        val ownership = when {
+            business > 0 && personal > 0 -> Ownership.MIXED
+            business > 0 -> Ownership.BUSINESS
+            personal > 0 -> Ownership.PERSONAL
+            else -> Ownership.REVIEW
+        }
+
+        draft = draft.copy(
+            ownership = ownership,
+            businessAmount = if (business > 0) formatCents(business) else "",
+            personalAmount = if (personal > 0) formatCents(personal) else "",
+            classificationReason = "Divisão atualizada a partir da classificação dos itens."
+        )
+
+        return null
+    }
+
+    fun updatePaymentMethod(v: PaymentMethod) {
+        draft = draft.copy(paymentMethod = v)
+    }
+
+    fun updatePaymentStatus(v: PaymentStatus) {
+        draft = draft.copy(paymentStatus = v)
+    }
+
     fun updateDueDate(v: String) { draft = draft.copy(dueDate = v) }
     fun updateCategory(v: String) { draft = draft.copy(category = v) }
     fun updateNotes(v: String) { draft = draft.copy(notes = v) }
@@ -262,6 +431,7 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
             Ownership.MIXED -> parseCents(draft.businessAmount) ?: 0
             else -> 0
         }
+
         val personal = when (draft.ownership) {
             Ownership.PERSONAL -> total
             Ownership.MIXED -> parseCents(draft.personalAmount) ?: 0
@@ -273,6 +443,7 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
         }
 
         saving = true
+
         viewModelScope.launch(Dispatchers.IO) {
             runCatching {
                 val duplicate = if (draft.imageSha256.isNotBlank()) {
@@ -285,6 +456,7 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
 
                 db.withTransaction {
                     val now = System.currentTimeMillis()
+
                     val receipt = Receipt(
                         id = editingReceiptId ?: 0,
                         imageUri = draft.imageUri,
@@ -313,6 +485,22 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
                         editingReceiptId!!
                     }
 
+                    itemDao.deleteByReceiptId(receiptId)
+                    if (draft.items.isNotEmpty()) {
+                        itemDao.insertAll(
+                            draft.items.map { item ->
+                                ReceiptItem(
+                                    receiptId = receiptId,
+                                    description = item.description,
+                                    amountCents = item.amountCents,
+                                    ownership = item.ownership,
+                                    confidence = item.confidence,
+                                    lineIndex = item.lineIndex
+                                )
+                            }
+                        )
+                    }
+
                     transactionDao.deleteByReceiptId(receiptId)
                     val txDate = receipt.issuedAt ?: receipt.createdAt
 
@@ -326,7 +514,9 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
                                 kind = EntryKind.EXPENSE,
                                 paymentMethod = receipt.paymentMethod,
                                 paymentStatus = receipt.paymentStatus,
-                                paidAt = if (receipt.paymentStatus == PaymentStatus.PAID) txDate else null,
+                                paidAt = if (receipt.paymentStatus == PaymentStatus.PAID) {
+                                    txDate
+                                } else null,
                                 dueAt = receipt.dueAt,
                                 createdAt = txDate
                             )
@@ -343,7 +533,9 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
                                 kind = EntryKind.EXPENSE,
                                 paymentMethod = receipt.paymentMethod,
                                 paymentStatus = receipt.paymentStatus,
-                                paidAt = if (receipt.paymentStatus == PaymentStatus.PAID) txDate else null,
+                                paidAt = if (receipt.paymentStatus == PaymentStatus.PAID) {
+                                    txDate
+                                } else null,
                                 dueAt = receipt.dueAt,
                                 createdAt = txDate
                             )
@@ -367,7 +559,11 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun deleteReceipt(receipt: Receipt, onDone: () -> Unit = {}, onError: (String) -> Unit = {}) {
+    fun deleteReceipt(
+        receipt: Receipt,
+        onDone: () -> Unit = {},
+        onError: (String) -> Unit = {}
+    ) {
         viewModelScope.launch(Dispatchers.IO) {
             runCatching {
                 db.withTransaction {
@@ -397,13 +593,20 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
         onSaved: () -> Unit,
         onError: (String) -> Unit
     ) {
-        val cents = parseCents(amount) ?: return onError("Informe um valor válido.")
-        if (cents <= 0) return onError("O valor precisa ser maior que zero.")
+        val cents = parseCents(amount)
+            ?: return onError("Informe um valor válido.")
+
+        if (cents <= 0) {
+            return onError("O valor precisa ser maior que zero.")
+        }
 
         val effectiveOwnership = when (kind) {
-            EntryKind.REVENUE, EntryKind.CONTRIBUTION, EntryKind.WITHDRAWAL -> Ownership.BUSINESS
+            EntryKind.REVENUE,
+            EntryKind.CONTRIBUTION,
+            EntryKind.WITHDRAWAL -> Ownership.BUSINESS
             EntryKind.EXPENSE -> ownership
         }
+
         val createdAt = parseDate(date) ?: System.currentTimeMillis()
         val dueAt = parseDate(dueDate)
 
@@ -432,18 +635,23 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun deleteManualEntry(transaction: Transaction, onError: (String) -> Unit = {}) {
+    fun deleteManualEntry(
+        transaction: Transaction,
+        onError: (String) -> Unit = {}
+    ) {
         if (transaction.receiptId != null) {
             onError("Lançamentos ligados a comprovantes devem ser alterados pelo comprovante.")
             return
         }
+
         viewModelScope.launch(Dispatchers.IO) {
-            runCatching { transactionDao.delete(transaction) }
-                .onFailure {
-                    withContext(Dispatchers.Main) {
-                        onError(it.message ?: "Não foi possível excluir o lançamento.")
-                    }
+            runCatching {
+                transactionDao.delete(transaction)
+            }.onFailure {
+                withContext(Dispatchers.Main) {
+                    onError(it.message ?: "Não foi possível excluir o lançamento.")
                 }
+            }
         }
     }
 
@@ -453,9 +661,15 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
         firstYear: Boolean,
         onError: (String) -> Unit = {}
     ) {
-        val limit = parseCents(annualLimit) ?: return onError("Informe um teto anual válido.")
-        val month = openingMonth.toIntOrNull() ?: return onError("Informe o mês de abertura de 1 a 12.")
-        if (month !in 1..12) return onError("O mês de abertura deve estar entre 1 e 12.")
+        val limit = parseCents(annualLimit)
+            ?: return onError("Informe um teto anual válido.")
+
+        val month = openingMonth.toIntOrNull()
+            ?: return onError("Informe o mês de abertura de 1 a 12.")
+
+        if (month !in 1..12) {
+            return onError("O mês de abertura deve estar entre 1 e 12.")
+        }
 
         meiSettings.update(
             MeiConfig(
@@ -466,7 +680,10 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
         )
     }
 
-    fun exportCsv(onReady: (Uri) -> Unit, onError: (String) -> Unit) {
+    fun exportCsv(
+        onReady: (Uri) -> Unit,
+        onError: (String) -> Unit
+    ) {
         viewModelScope.launch(Dispatchers.IO) {
             runCatching {
                 CsvExporter.export(
@@ -475,13 +692,43 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
                     transactions.value
                 )
             }.onSuccess {
-                withContext(Dispatchers.Main) { onReady(it) }
+                withContext(Dispatchers.Main) {
+                    onReady(it)
+                }
             }.onFailure {
                 withContext(Dispatchers.Main) {
                     onError(it.message ?: "Não foi possível exportar os dados.")
                 }
             }
         }
+    }
+
+    private fun exactItemSplit(
+        items: List<ReceiptItemDraft>,
+        totalCents: Long?
+    ): Pair<Long, Long>? {
+        if (totalCents == null || items.isEmpty()) return null
+
+        if (items.any {
+                it.ownership == Ownership.REVIEW ||
+                    it.ownership == Ownership.MIXED
+            }) {
+            return null
+        }
+
+        if (items.sumOf { it.amountCents } != totalCents) {
+            return null
+        }
+
+        val business = items
+            .filter { it.ownership == Ownership.BUSINESS }
+            .sumOf { it.amountCents }
+
+        val personal = items
+            .filter { it.ownership == Ownership.PERSONAL }
+            .sumOf { it.amountCents }
+
+        return business to personal
     }
 
     private fun labelFor(kind: EntryKind): String = when (kind) {
@@ -495,7 +742,10 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
         val clean = value.replace("R$", "").trim()
         val normalized = if (clean.contains(',')) {
             clean.replace(".", "").replace(",", ".")
-        } else clean
+        } else {
+            clean
+        }
+
         BigDecimal(normalized)
             .movePointRight(2)
             .setScale(0, RoundingMode.HALF_UP)
@@ -507,9 +757,16 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
 
     private fun parseDate(value: String): Long? {
         if (value.isBlank()) return null
-        val normalized = value.replace('.', '/').replace('-', '/')
+
+        val normalized = value
+            .replace('.', '/')
+            .replace('-', '/')
+
         return runCatching {
-            LocalDate.parse(normalized, DateTimeFormatter.ofPattern("d/M/uuuu"))
+            LocalDate.parse(
+                normalized,
+                DateTimeFormatter.ofPattern("d/M/uuuu")
+            )
                 .atStartOfDay(ZoneId.systemDefault())
                 .toInstant()
                 .toEpochMilli()
@@ -518,6 +775,7 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
 
     private fun formatDate(epoch: Long?): String {
         if (epoch == null) return ""
+
         return DateTimeFormatter.ofPattern("dd/MM/uuuu")
             .withZone(ZoneId.systemDefault())
             .format(Instant.ofEpochMilli(epoch))

@@ -41,10 +41,9 @@ fun HomeScreen(
     Scaffold(
         topBar = { TopAppBar(title = { Text("DailyOffice • Contador MEI") }) },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = onCapture,
-                text = { Text("Fotografar") }
-            )
+            ExtendedFloatingActionButton(onClick = onCapture) {
+                Text("Fotografar")
+            }
         }
     ) { pad ->
         LazyColumn(

@@ -43,6 +43,28 @@ data class Receipt(
 )
 
 @Entity(
+    tableName = "receipt_items",
+    foreignKeys = [
+        ForeignKey(
+            entity = Receipt::class,
+            parentColumns = ["id"],
+            childColumns = ["receiptId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [Index("receiptId")]
+)
+data class ReceiptItem(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val receiptId: Long,
+    val description: String,
+    val amountCents: Long,
+    val ownership: Ownership = Ownership.REVIEW,
+    val confidence: Float = 0f,
+    val lineIndex: Int = 0
+)
+
+@Entity(
     tableName = "transactions",
     indices = [
         Index("receiptId"),
@@ -98,6 +120,18 @@ interface ReceiptDao {
 }
 
 @Dao
+interface ReceiptItemDao {
+    @Insert
+    suspend fun insertAll(items: List<ReceiptItem>)
+
+    @Query("SELECT * FROM receipt_items WHERE receiptId = :receiptId ORDER BY lineIndex ASC, id ASC")
+    suspend fun byReceiptId(receiptId: Long): List<ReceiptItem>
+
+    @Query("DELETE FROM receipt_items WHERE receiptId = :receiptId")
+    suspend fun deleteByReceiptId(receiptId: Long)
+}
+
+@Dao
 interface TransactionDao {
     @Insert
     suspend fun insert(transaction: Transaction): Long
@@ -116,13 +150,14 @@ interface TransactionDao {
 }
 
 @Database(
-    entities = [Receipt::class, Transaction::class],
-    version = 2,
+    entities = [Receipt::class, ReceiptItem::class, Transaction::class],
+    version = 3,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
 abstract class DailyOfficeDb : RoomDatabase() {
     abstract fun receiptDao(): ReceiptDao
+    abstract fun receiptItemDao(): ReceiptItemDao
     abstract fun transactionDao(): TransactionDao
 
     companion object {
@@ -139,6 +174,28 @@ abstract class DailyOfficeDb : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS receipt_items (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        receiptId INTEGER NOT NULL,
+                        description TEXT NOT NULL,
+                        amountCents INTEGER NOT NULL,
+                        ownership TEXT NOT NULL,
+                        confidence REAL NOT NULL,
+                        lineIndex INTEGER NOT NULL,
+                        FOREIGN KEY(receiptId) REFERENCES receipts(id) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_receipt_items_receiptId ON receipt_items(receiptId)"
+                )
+            }
+        }
+
         fun get(context: Context): DailyOfficeDb =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -146,7 +203,7 @@ abstract class DailyOfficeDb : RoomDatabase() {
                     DailyOfficeDb::class.java,
                     "dailyoffice.db"
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .build()
                     .also { instance = it }
             }

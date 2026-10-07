@@ -128,7 +128,9 @@ data class ReceiptItem(
     val confidence: Float = 0f,
     val lineIndex: Int = 0,
     val stockProductId: Long? = null,
+    @ColumnInfo(defaultValue = "0")
     val stockQuantityMilli: Long = 0,
+    @ColumnInfo(defaultValue = "0")
     val addToStock: Boolean = false
 )
 

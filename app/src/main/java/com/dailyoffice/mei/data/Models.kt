@@ -151,7 +151,7 @@ interface TransactionDao {
 
 @Database(
     entities = [Receipt::class, ReceiptItem::class, Transaction::class],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -196,6 +196,22 @@ abstract class DailyOfficeDb : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    UPDATE transactions
+                    SET createdAt = COALESCE(
+                        (SELECT issuedAt FROM receipts WHERE receipts.id = transactions.receiptId),
+                        (SELECT createdAt FROM receipts WHERE receipts.id = transactions.receiptId),
+                        CAST(strftime('%s','now') AS INTEGER) * 1000
+                    )
+                    WHERE createdAt = 0
+                    """.trimIndent()
+                )
+            }
+        }
+
         fun get(context: Context): DailyOfficeDb =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -203,7 +219,7 @@ abstract class DailyOfficeDb : RoomDatabase() {
                     DailyOfficeDb::class.java,
                     "dailyoffice.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .build()
                     .also { instance = it }
             }

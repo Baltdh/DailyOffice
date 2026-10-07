@@ -30,6 +30,7 @@ fun FinanceScreen(
     val mei by viewModel.meiProjection.collectAsStateWithLifecycle()
     val config by viewModel.meiConfig.collectAsStateWithLifecycle()
     val transactions by viewModel.transactions.collectAsStateWithLifecycle()
+    val activeCompany by viewModel.activeCompany.collectAsStateWithLifecycle()
 
     var addingKind by remember { mutableStateOf<EntryKind?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -64,6 +65,10 @@ fun FinanceScreen(
         ) {
             item {
                 Text("Resumo financeiro", style = MaterialTheme.typography.headlineSmall)
+                Text(
+                    activeCompany?.name ?: "Empresa ativa",
+                    style = MaterialTheme.typography.bodyMedium
+                )
             }
             item {
                 Row(

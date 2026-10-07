@@ -35,11 +35,13 @@ fun FinanceScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var annualLimit by rememberSaveable { mutableStateOf("") }
     var openingMonth by rememberSaveable { mutableStateOf("") }
+    var taxYear by rememberSaveable { mutableStateOf("") }
     var firstYear by rememberSaveable { mutableStateOf(true) }
 
     LaunchedEffect(config) {
         annualLimit = "%.2f".format(Locale("pt", "BR"), config.annualLimitCents / 100.0)
         openingMonth = config.openingMonth.toString()
+        taxYear = config.taxYear.toString()
         firstYear = config.proportionalFirstYear
     }
 
@@ -124,7 +126,10 @@ fun FinanceScreen(
                         Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Text("Limite do MEI", style = MaterialTheme.typography.titleLarge)
+                        Text(
+                            "Limite do MEI • ${config.taxYear}",
+                            style = MaterialTheme.typography.titleLarge
+                        )
                         Text("${money(mei.revenueCents)} de ${money(mei.limitCents)}")
                         LinearProgressIndicator(
                             progress = mei.usage.coerceIn(0f, 1f),
@@ -148,6 +153,15 @@ fun FinanceScreen(
                             value = annualLimit,
                             onValueChange = { annualLimit = it },
                             label = { Text("Teto anual MEI (R$)") },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = taxYear,
+                            onValueChange = { taxYear = it.filter(Char::isDigit).take(4) },
+                            label = { Text("Ano fiscal") },
+                            supportingText = {
+                                Text("Somente receitas desse ano entram no limite exibido.")
+                            },
                             modifier = Modifier.fillMaxWidth()
                         )
                         OutlinedTextField(
@@ -178,6 +192,7 @@ fun FinanceScreen(
                                     annualLimit = annualLimit,
                                     openingMonth = openingMonth,
                                     firstYear = firstYear,
+                                    taxYear = taxYear,
                                     onError = { error = it }
                                 )
                             },

@@ -12,16 +12,32 @@ enum class PaymentMethod { CASH, PIX, DEBIT, CREDIT, DIGITAL_WALLET, OTHER }
 enum class EntryKind { EXPENSE, REVENUE, CONTRIBUTION, WITHDRAWAL }
 
 @Entity(
+    tableName = "companies",
+    indices = [Index("active")]
+)
+data class Company(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val cnpj: String = "",
+    val ownerName: String = "",
+    val active: Boolean = true,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+@Entity(
     tableName = "receipts",
     indices = [
         Index("createdAt"),
         Index("ownership"),
         Index("paymentStatus"),
-        Index("imageSha256")
+        Index("imageSha256"),
+        Index("companyId")
     ]
 )
 data class Receipt(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(defaultValue = "1")
+    val companyId: Long = 1,
     val imageUri: String,
     @ColumnInfo(defaultValue = "''")
     val imageSha256: String = "",
@@ -70,11 +86,14 @@ data class ReceiptItem(
         Index("receiptId"),
         Index("dueAt"),
         Index("kind"),
-        Index("createdAt")
+        Index("createdAt"),
+        Index("companyId")
     ]
 )
 data class Transaction(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(defaultValue = "1")
+    val companyId: Long = 1,
     val receiptId: Long? = null,
     val description: String,
     val amountCents: Long,
@@ -88,6 +107,24 @@ data class Transaction(
     @ColumnInfo(defaultValue = "0")
     val createdAt: Long = System.currentTimeMillis()
 )
+
+@Dao
+interface CompanyDao {
+    @Insert
+    suspend fun insert(company: Company): Long
+
+    @Update
+    suspend fun update(company: Company)
+
+    @Query("SELECT * FROM companies WHERE active = 1 ORDER BY name COLLATE NOCASE ASC")
+    fun observeActive(): Flow<List<Company>>
+
+    @Query("SELECT * FROM companies WHERE id = :id LIMIT 1")
+    suspend fun byId(id: Long): Company?
+
+    @Query("SELECT COUNT(*) FROM companies")
+    suspend fun count(): Int
+}
 
 @Dao
 interface ReceiptDao {
@@ -150,12 +187,13 @@ interface TransactionDao {
 }
 
 @Database(
-    entities = [Receipt::class, ReceiptItem::class, Transaction::class],
-    version = 4,
+    entities = [Company::class, Receipt::class, ReceiptItem::class, Transaction::class],
+    version = 5,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
 abstract class DailyOfficeDb : RoomDatabase() {
+    abstract fun companyDao(): CompanyDao
     abstract fun receiptDao(): ReceiptDao
     abstract fun receiptItemDao(): ReceiptItemDao
     abstract fun transactionDao(): TransactionDao
@@ -212,6 +250,47 @@ abstract class DailyOfficeDb : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS companies (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        name TEXT NOT NULL,
+                        cnpj TEXT NOT NULL,
+                        ownerName TEXT NOT NULL,
+                        active INTEGER NOT NULL,
+                        createdAt INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_companies_active ON companies(active)"
+                )
+                db.execSQL(
+                    """
+                    INSERT OR IGNORE INTO companies
+                    (id, name, cnpj, ownerName, active, createdAt)
+                    VALUES (1, 'Empresa principal', '', '', 1, CAST(strftime('%s','now') AS INTEGER) * 1000)
+                    """.trimIndent()
+                )
+
+                db.execSQL(
+                    "ALTER TABLE receipts ADD COLUMN companyId INTEGER NOT NULL DEFAULT 1"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_receipts_companyId ON receipts(companyId)"
+                )
+
+                db.execSQL(
+                    "ALTER TABLE transactions ADD COLUMN companyId INTEGER NOT NULL DEFAULT 1"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_transactions_companyId ON transactions(companyId)"
+                )
+            }
+        }
+
         fun get(context: Context): DailyOfficeDb =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -219,7 +298,7 @@ abstract class DailyOfficeDb : RoomDatabase() {
                     DailyOfficeDb::class.java,
                     "dailyoffice.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .build()
                     .also { instance = it }
             }

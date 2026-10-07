@@ -55,7 +55,8 @@ data class InventoryProduct(
         Index("counterpartyCompanyId"),
         Index("type"),
         Index("createdAt"),
-        Index("transferGroupId")
+        Index("transferGroupId"),
+        Index("receiptId")
     ]
 )
 data class StockMovement(
@@ -68,6 +69,7 @@ data class StockMovement(
     val totalCostCents: Long? = null,
     val note: String = "",
     val transferGroupId: String = "",
+    val receiptId: Long? = null,
     val createdAt: Long = System.currentTimeMillis()
 )
 
@@ -124,7 +126,10 @@ data class ReceiptItem(
     val amountCents: Long,
     val ownership: Ownership = Ownership.REVIEW,
     val confidence: Float = 0f,
-    val lineIndex: Int = 0
+    val lineIndex: Int = 0,
+    val stockProductId: Long? = null,
+    val stockQuantityMilli: Long = 0,
+    val addToStock: Boolean = false
 )
 
 @Entity(
@@ -196,6 +201,9 @@ interface StockMovementDao {
 
     @Query("SELECT * FROM stock_movements ORDER BY createdAt DESC, id DESC")
     fun observeAll(): Flow<List<StockMovement>>
+
+    @Query("DELETE FROM stock_movements WHERE receiptId = :receiptId AND type = 'PURCHASE'")
+    suspend fun deleteReceiptPurchases(receiptId: Long)
 
     @Query(
         """
@@ -281,7 +289,7 @@ interface TransactionDao {
         ReceiptItem::class,
         Transaction::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -443,6 +451,27 @@ abstract class DailyOfficeDb : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE receipt_items ADD COLUMN stockProductId INTEGER"
+                )
+                db.execSQL(
+                    "ALTER TABLE receipt_items ADD COLUMN stockQuantityMilli INTEGER NOT NULL DEFAULT 0"
+                )
+                db.execSQL(
+                    "ALTER TABLE receipt_items ADD COLUMN addToStock INTEGER NOT NULL DEFAULT 0"
+                )
+
+                db.execSQL(
+                    "ALTER TABLE stock_movements ADD COLUMN receiptId INTEGER"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_stock_movements_receiptId ON stock_movements(receiptId)"
+                )
+            }
+        }
+
         fun get(context: Context): DailyOfficeDb =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -450,7 +479,7 @@ abstract class DailyOfficeDb : RoomDatabase() {
                     DailyOfficeDb::class.java,
                     "dailyoffice.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                     .build()
                     .also { instance = it }
             }

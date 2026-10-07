@@ -51,12 +51,14 @@
 - [x] cadastro e troca da empresa ativa
 - [x] comprovantes e lançamentos isolados por empresa
 - [x] configuração MEI independente por empresa
-- [ ] contas bancárias/fontes de pagamento por empresa
+- [x] contas bancárias/fontes de pagamento por empresa
 - [x] estoque físico com propriedade por CNPJ
 - [x] transferência interna de estoque entre empresas com histórico
 - [x] vínculo de compras do comprovante com entradas de estoque
 - [ ] vínculo da transferência entre empresas com documento fiscal/comprovante
 - [x] histórico auditável de movimentações de estoque
+- [x] identificação de despesa empresarial paga pelo titular
+- [ ] reembolso do titular e conciliação entre contas
 - [ ] relatório consolidado sem misturar os livros de cada CNPJ
 
 ## M6 — Conciliação

@@ -2,7 +2,7 @@
 
 Aplicativo Android local-first para fotografar e arquivar comprovantes, extrair dados por OCR e organizar finanças pessoais e empresariais.
 
-## Estado atual — v0.7.0
+## Estado atual — v0.8.0
 
 O DailyOffice já possui:
 
@@ -33,6 +33,11 @@ O DailyOffice já possui:
 - ligação de itens do comprovante ao estoque da empresa;
 - quantidade sugerida pelo OCR quando há kg, g, L, ml, unidade ou multiplicação por preço;
 - entrada de estoque criada junto com o comprovante, sem digitação dupla;
+- contas/origens de pagamento separadas por empresa;
+- diferenciação entre forma de pagamento e conta de origem;
+- identificação de despesa empresarial paga com conta ou cartão pessoal do titular;
+- contas padrão para PJ, caixa, cartão da empresa, contas pessoais e recebíveis do iFood;
+- exportação CSV com conta de origem e indicação das linhas que entram no fluxo financeiro;
 - exportação dos dados da empresa ativa em CSV;
 - migrações do banco preservando os dados de versões anteriores.
 

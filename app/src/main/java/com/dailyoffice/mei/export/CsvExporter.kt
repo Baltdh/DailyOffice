@@ -27,7 +27,7 @@ object CsvExporter {
         val accountById = accounts.associateBy { it.id }
 
         file.bufferedWriter().use { out ->
-            out.appendLine("TIPO;ID;DATA;DESCRICAO;VALOR;CLASSIFICACAO;PAGAMENTO;STATUS;CONTA;DOCUMENTO;CATEGORIA;COMPROVANTE_ID;ENTRA_NO_FLUXO")
+            out.appendLine("TIPO;ID;DATA;DESCRICAO;VALOR;CLASSIFICACAO;PAGAMENTO;STATUS;CONTA_ORIGEM;CONTA_DESTINO;DOCUMENTO;CATEGORIA;COMPROVANTE_ID;ENTRA_NO_FLUXO")
 
             receipts.forEach { receipt ->
                 out.appendLine(
@@ -41,6 +41,7 @@ object CsvExporter {
                         receipt.paymentMethod.name,
                         receipt.paymentStatus.name,
                         accountById[receipt.accountId]?.name.orEmpty(),
+                        "",
                         receipt.documentNumber,
                         receipt.category,
                         receipt.id.toString(),
@@ -61,6 +62,7 @@ object CsvExporter {
                         tx.paymentMethod.name,
                         tx.paymentStatus.name,
                         accountById[tx.accountId]?.name.orEmpty(),
+                        accountById[tx.counterpartyAccountId]?.name.orEmpty(),
                         "",
                         "",
                         tx.receiptId?.toString().orEmpty(),

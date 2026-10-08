@@ -19,6 +19,15 @@ data class FinancialTotals(
     val receivableCents: Long = 0
 )
 
+data class AccountFlow(
+    val accountId: Long,
+    val inflowCents: Long = 0,
+    val outflowCents: Long = 0
+) {
+    val netCents: Long
+        get() = inflowCents - outflowCents
+}
+
 object FinanceCalculator {
     fun summarize(transactions: List<Transaction>): FinancialTotals {
         val active = transactions.filter {
@@ -88,6 +97,81 @@ object FinanceCalculator {
                 }
             }
             .sumOf { it.amountCents }
+    }
+
+    fun ownerReimbursedCents(
+        transactions: List<Transaction>,
+        accounts: List<Account>
+    ): Long {
+        val accountById = accounts.associateBy { it.id }
+
+        return transactions.asSequence()
+            .filter {
+                it.kind == EntryKind.REIMBURSEMENT &&
+                    it.paymentStatus == PaymentStatus.PAID
+            }
+            .filter { transaction ->
+                val sourceKind = accountById[transaction.accountId]?.kind
+                val destinationKind = accountById[transaction.counterpartyAccountId]?.kind
+
+                val sourceIsBusiness = sourceKind == AccountKind.BUSINESS_BANK ||
+                    sourceKind == AccountKind.BUSINESS_CASH
+
+                val destinationIsOwner = destinationKind == AccountKind.OWNER_PERSONAL_BANK ||
+                    destinationKind == AccountKind.OWNER_PERSONAL_CARD
+
+                sourceIsBusiness && destinationIsOwner
+            }
+            .sumOf { it.amountCents }
+    }
+
+    fun ownerReimbursementOutstandingCents(
+        transactions: List<Transaction>,
+        accounts: List<Account>
+    ): Long {
+        val paidPersonally = ownerPaidBusinessExpenses(transactions, accounts)
+        val reimbursed = ownerReimbursedCents(transactions, accounts)
+        return (paidPersonally - reimbursed).coerceAtLeast(0L)
+    }
+
+    fun accountFlows(transactions: List<Transaction>): List<AccountFlow> {
+        val totals = linkedMapOf<Long, Pair<Long, Long>>()
+
+        fun addInflow(accountId: Long?, amount: Long) {
+            if (accountId == null) return
+            val current = totals[accountId] ?: (0L to 0L)
+            totals[accountId] = (current.first + amount) to current.second
+        }
+
+        fun addOutflow(accountId: Long?, amount: Long) {
+            if (accountId == null) return
+            val current = totals[accountId] ?: (0L to 0L)
+            totals[accountId] = current.first to (current.second + amount)
+        }
+
+        transactions.asSequence()
+            .filter { it.paymentStatus == PaymentStatus.PAID }
+            .forEach { transaction ->
+                when (transaction.kind) {
+                    EntryKind.EXPENSE -> addOutflow(transaction.accountId, transaction.amountCents)
+                    EntryKind.REVENUE,
+                    EntryKind.CONTRIBUTION -> addInflow(transaction.accountId, transaction.amountCents)
+                    EntryKind.WITHDRAWAL -> addOutflow(transaction.accountId, transaction.amountCents)
+                    EntryKind.REIMBURSEMENT,
+                    EntryKind.TRANSFER -> {
+                        addOutflow(transaction.accountId, transaction.amountCents)
+                        addInflow(transaction.counterpartyAccountId, transaction.amountCents)
+                    }
+                }
+            }
+
+        return totals.map { (accountId, pair) ->
+            AccountFlow(
+                accountId = accountId,
+                inflowCents = pair.first,
+                outflowCents = pair.second
+            )
+        }
     }
 
     fun revenueForYear(

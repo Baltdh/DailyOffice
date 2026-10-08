@@ -170,8 +170,8 @@ fun HomeScreen(
 
             item {
                 MetricCard(
-                    "Despesas da empresa pagas pelo titular",
-                    money(summary.ownerPaidBusinessExpensesCents),
+                    "A reembolsar ao titular",
+                    money(summary.ownerReimbursementOutstandingCents),
                     Modifier.fillMaxWidth()
                 )
             }

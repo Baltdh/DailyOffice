@@ -10,6 +10,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.room.withTransaction
 import com.dailyoffice.mei.data.*
 import com.dailyoffice.mei.export.CsvExporter
+import com.dailyoffice.mei.finance.AccountFlow
 import com.dailyoffice.mei.finance.FinanceCalculator
 import com.dailyoffice.mei.finance.MeiCalculator
 import com.dailyoffice.mei.finance.MeiConfig
@@ -77,6 +78,8 @@ data class DashboardSummary(
     val pendingCents: Long = 0,
     val receivableCents: Long = 0,
     val ownerPaidBusinessExpensesCents: Long = 0,
+    val ownerReimbursedCents: Long = 0,
+    val ownerReimbursementOutstandingCents: Long = 0,
     val reviewCount: Int = 0,
     val receiptCount: Int = 0
 )
@@ -150,6 +153,14 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
         emptyList()
     )
 
+    val accountFlows: StateFlow<List<AccountFlow>> = transactions
+        .map { FinanceCalculator.accountFlows(it) }
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5_000),
+            emptyList()
+        )
+
     private val _meiConfig = MutableStateFlow(
         meiSettings.load(_activeCompanyId.value)
     )
@@ -185,6 +196,14 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
             transactions = txList,
             accounts = accountList
         )
+        val ownerReimbursed = FinanceCalculator.ownerReimbursedCents(
+            transactions = txList,
+            accounts = accountList
+        )
+        val ownerOutstanding = FinanceCalculator.ownerReimbursementOutstandingCents(
+            transactions = txList,
+            accounts = accountList
+        )
 
         DashboardSummary(
             businessExpensesCents = totals.businessExpensesCents,
@@ -195,6 +214,8 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
             pendingCents = totals.pendingCents,
             receivableCents = totals.receivableCents,
             ownerPaidBusinessExpensesCents = ownerPaid,
+            ownerReimbursedCents = ownerReimbursed,
+            ownerReimbursementOutstandingCents = ownerOutstanding,
             reviewCount = receiptList.count { it.ownership == Ownership.REVIEW },
             receiptCount = receiptList.size
         )
@@ -840,11 +861,20 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
             return onError("Selecione a conta/origem do dinheiro.")
         }
 
+        if (
+            kind == EntryKind.REIMBURSEMENT ||
+            kind == EntryKind.TRANSFER
+        ) {
+            return onError("Use a transferência entre contas para esse tipo de lançamento.")
+        }
+
         val effectiveOwnership = when (kind) {
             EntryKind.REVENUE,
             EntryKind.CONTRIBUTION,
             EntryKind.WITHDRAWAL -> Ownership.BUSINESS
             EntryKind.EXPENSE -> ownership
+            EntryKind.REIMBURSEMENT,
+            EntryKind.TRANSFER -> Ownership.BUSINESS
         }
 
         val createdAt = parseDate(date) ?: System.currentTimeMillis()
@@ -872,6 +902,118 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
             }.onFailure {
                 withContext(Dispatchers.Main) {
                     onError(it.message ?: "Não foi possível salvar o lançamento.")
+                }
+            }
+        }
+    }
+
+    fun addAccountTransfer(
+        amount: String,
+        sourceAccountId: Long?,
+        destinationAccountId: Long?,
+        paymentMethod: PaymentMethod,
+        date: String,
+        reimbursement: Boolean,
+        note: String,
+        onSaved: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        val cents = parseCents(amount)
+            ?: return onError("Informe um valor válido.")
+
+        if (cents <= 0) {
+            return onError("O valor precisa ser maior que zero.")
+        }
+
+        val sourceId = sourceAccountId
+            ?: return onError("Selecione a conta de origem.")
+        val destinationId = destinationAccountId
+            ?: return onError("Selecione a conta de destino.")
+
+        if (sourceId == destinationId) {
+            return onError("Origem e destino precisam ser contas diferentes.")
+        }
+
+        val source = accounts.value.firstOrNull { it.id == sourceId }
+            ?: return onError("Conta de origem não encontrada.")
+        val destination = accounts.value.firstOrNull { it.id == destinationId }
+            ?: return onError("Conta de destino não encontrada.")
+
+        if (
+            source.companyId != _activeCompanyId.value ||
+            destination.companyId != _activeCompanyId.value
+        ) {
+            return onError("As duas contas precisam pertencer à empresa ativa.")
+        }
+
+        val kind = if (reimbursement) {
+            val sourceIsBusiness =
+                source.kind == AccountKind.BUSINESS_BANK ||
+                    source.kind == AccountKind.BUSINESS_CASH
+            val destinationIsOwner =
+                destination.kind == AccountKind.OWNER_PERSONAL_BANK ||
+                    destination.kind == AccountKind.OWNER_PERSONAL_CARD
+
+            if (!sourceIsBusiness) {
+                return onError(
+                    "O reembolso deve sair de uma conta bancária ou caixa da empresa."
+                )
+            }
+            if (!destinationIsOwner) {
+                return onError(
+                    "O destino do reembolso deve ser uma conta pessoal do titular."
+                )
+            }
+
+            val outstanding = FinanceCalculator.ownerReimbursementOutstandingCents(
+                transactions = transactions.value,
+                accounts = accounts.value
+            )
+            if (outstanding <= 0) {
+                return onError("Não há valor pendente de reembolso ao titular.")
+            }
+            if (cents > outstanding) {
+                return onError(
+                    "O reembolso é maior que o saldo pendente de R$ ${formatCents(outstanding)}."
+                )
+            }
+
+            EntryKind.REIMBURSEMENT
+        } else {
+            EntryKind.TRANSFER
+        }
+
+        val createdAt = parseDate(date) ?: System.currentTimeMillis()
+        val description = note.trim().ifBlank {
+            if (reimbursement) {
+                "Reembolso ao titular"
+            } else {
+                "Transferência entre contas"
+            }
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                transactionDao.insert(
+                    Transaction(
+                        companyId = _activeCompanyId.value,
+                        accountId = source.id,
+                        counterpartyAccountId = destination.id,
+                        description = description,
+                        amountCents = cents,
+                        ownership = Ownership.BUSINESS,
+                        kind = kind,
+                        paymentMethod = paymentMethod,
+                        paymentStatus = PaymentStatus.PAID,
+                        paidAt = createdAt,
+                        createdAt = createdAt
+                    )
+                )
+            }.onSuccess {
+                withContext(Dispatchers.Main) { onSaved() }
+            }.onFailure {
+                withContext(Dispatchers.Main) {
+                    onError(it.message ?: "Não foi possível registrar a transferência.")
                 }
             }
         }
@@ -1354,6 +1496,8 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
         EntryKind.REVENUE -> "Receita"
         EntryKind.CONTRIBUTION -> "Aporte"
         EntryKind.WITHDRAWAL -> "Retirada"
+        EntryKind.REIMBURSEMENT -> "Reembolso ao titular"
+        EntryKind.TRANSFER -> "Transferência"
     }
 
     private fun parseCents(value: String): Long? = runCatching {

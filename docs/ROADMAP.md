@@ -58,7 +58,8 @@
 - [ ] vínculo da transferência entre empresas com documento fiscal/comprovante
 - [x] histórico auditável de movimentações de estoque
 - [x] identificação de despesa empresarial paga pelo titular
-- [ ] reembolso do titular e conciliação entre contas
+- [x] reembolso do titular e transferências entre contas
+- [x] fluxo de entradas/saídas por conta
 - [ ] relatório consolidado sem misturar os livros de cada CNPJ
 
 ## M6 — Conciliação
@@ -67,3 +68,4 @@
 - [ ] fila de divergências
 - [ ] importação de repasses do iFood
 - [ ] fechamento mensal assistido
+- [ ] saldos iniciais e conciliação de saldo por conta

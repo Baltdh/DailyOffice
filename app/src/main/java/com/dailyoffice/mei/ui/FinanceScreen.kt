@@ -20,6 +20,11 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
+private enum class TransferDialogMode {
+    TRANSFER,
+    REIMBURSEMENT
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FinanceScreen(
@@ -401,6 +406,31 @@ fun FinanceScreen(
             }
         )
     }
+
+    transferMode?.let { mode ->
+        AccountTransferDialog(
+            mode = mode,
+            accounts = accounts,
+            outstandingCents = summary.ownerReimbursementOutstandingCents,
+            onDismiss = { transferMode = null },
+            onSave = { amount, sourceId, destinationId, method, date, note ->
+                viewModel.addAccountTransfer(
+                    amount = amount,
+                    sourceAccountId = sourceId,
+                    destinationAccountId = destinationId,
+                    paymentMethod = method,
+                    date = date,
+                    reimbursement = mode == TransferDialogMode.REIMBURSEMENT,
+                    note = note,
+                    onSaved = {
+                        transferMode = null
+                        error = null
+                    },
+                    onError = { error = it }
+                )
+            }
+        )
+    }
 }
 
 @Composable
@@ -417,6 +447,7 @@ private fun FinanceMetric(title: String, value: String, modifier: Modifier = Mod
 private fun TransactionCard(
     transaction: Transaction,
     accountName: String?,
+    counterpartyAccountName: String?,
     onDelete: (() -> Unit)?
 ) {
     val kind = when (transaction.kind) {
@@ -424,6 +455,8 @@ private fun TransactionCard(
         EntryKind.REVENUE -> "Receita"
         EntryKind.CONTRIBUTION -> "Aporte"
         EntryKind.WITHDRAWAL -> "Retirada"
+        EntryKind.REIMBURSEMENT -> "Reembolso"
+        EntryKind.TRANSFER -> "Transferência"
     }
     val source = if (transaction.receiptId == null) "Manual" else "Comprovante"
 
@@ -436,7 +469,11 @@ private fun TransactionCard(
             Text("$kind • ${money(transaction.amountCents)} • $source")
             if (!accountName.isNullOrBlank()) {
                 Text(
-                    "Conta: $accountName",
+                    if (!counterpartyAccountName.isNullOrBlank()) {
+                        "$accountName → $counterpartyAccountName"
+                    } else {
+                        "Conta: $accountName"
+                    },
                     style = MaterialTheme.typography.bodySmall
                 )
             }
@@ -491,6 +528,8 @@ private fun AddEntryDialog(
                     EntryKind.REVENUE -> "Nova receita"
                     EntryKind.CONTRIBUTION -> "Novo aporte"
                     EntryKind.WITHDRAWAL -> "Nova retirada"
+                    EntryKind.REIMBURSEMENT -> "Novo reembolso"
+                    EntryKind.TRANSFER -> "Nova transferência"
                 }
             )
         },
@@ -618,6 +657,175 @@ private fun AddEntryDialog(
 }
 
 @Composable
+private fun AccountTransferDialog(
+    mode: TransferDialogMode,
+    accounts: List<Account>,
+    outstandingCents: Long,
+    onDismiss: () -> Unit,
+    onSave: (
+        amount: String,
+        sourceAccountId: Long?,
+        destinationAccountId: Long?,
+        method: PaymentMethod,
+        date: String,
+        note: String
+    ) -> Unit
+) {
+    val reimbursement = mode == TransferDialogMode.REIMBURSEMENT
+
+    val sourceOptions = if (reimbursement) {
+        accounts.filter {
+            it.kind == AccountKind.BUSINESS_BANK ||
+                it.kind == AccountKind.BUSINESS_CASH
+        }
+    } else {
+        accounts
+    }
+
+    val destinationOptions = if (reimbursement) {
+        accounts.filter {
+            it.kind == AccountKind.OWNER_PERSONAL_BANK ||
+                it.kind == AccountKind.OWNER_PERSONAL_CARD
+        }
+    } else {
+        accounts
+    }
+
+    var amount by rememberSaveable(mode) { mutableStateOf("") }
+    var date by rememberSaveable(mode) { mutableStateOf("") }
+    var note by rememberSaveable(mode) { mutableStateOf("") }
+    var method by remember(mode) { mutableStateOf(PaymentMethod.PIX) }
+    var sourceId by remember(mode, accounts) {
+        mutableStateOf(sourceOptions.firstOrNull()?.id)
+    }
+    var destinationId by remember(mode, accounts) {
+        mutableStateOf(destinationOptions.firstOrNull { it.id != sourceId }?.id)
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                if (reimbursement) {
+                    "Reembolsar titular"
+                } else {
+                    "Transferir entre contas"
+                }
+            )
+        },
+        text = {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 520.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                if (reimbursement) {
+                    Text(
+                        "Pendente de reembolso: ${money(outstandingCents)}",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        "O reembolso devolve dinheiro ao titular sem criar nova despesa ou receita.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                } else {
+                    Text(
+                        "Transferências movimentam valores entre contas sem virar receita ou despesa.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+
+                OutlinedTextField(
+                    value = amount,
+                    onValueChange = { amount = it },
+                    label = { Text("Valor (R$)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Text("Conta de origem")
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    sourceOptions.forEach { account ->
+                        FilterChip(
+                            selected = sourceId == account.id,
+                            onClick = {
+                                sourceId = account.id
+                                if (destinationId == account.id) {
+                                    destinationId = destinationOptions
+                                        .firstOrNull { it.id != account.id }?.id
+                                }
+                            },
+                            label = { Text(account.name) },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+
+                Text("Conta de destino")
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    destinationOptions
+                        .filter { it.id != sourceId }
+                        .forEach { account ->
+                            FilterChip(
+                                selected = destinationId == account.id,
+                                onClick = { destinationId = account.id },
+                                label = { Text(account.name) },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                }
+
+                Text("Forma")
+                ChoiceChips(
+                    values = PaymentMethod.entries,
+                    selected = method,
+                    label = ::paymentMethodLabel,
+                    onSelect = { method = it }
+                )
+
+                OutlinedTextField(
+                    value = date,
+                    onValueChange = { date = it },
+                    label = { Text("Data (dd/mm/aaaa) - opcional") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = note,
+                    onValueChange = { note = it },
+                    label = { Text("Descrição / observação - opcional") },
+                    minLines = 2,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onSave(
+                        amount,
+                        sourceId,
+                        destinationId,
+                        method,
+                        date,
+                        note
+                    )
+                },
+                enabled = sourceId != null &&
+                    destinationId != null &&
+                    sourceId != destinationId
+            ) {
+                Text(if (reimbursement) "Registrar reembolso" else "Transferir")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancelar") }
+        }
+    )
+}
+
+@Composable
 private fun AddAccountDialog(
     onDismiss: () -> Unit,
     onSave: (String, AccountKind) -> Unit
@@ -667,6 +875,16 @@ private fun AddAccountDialog(
     )
 }
 
+private fun paymentMethodLabel(method: PaymentMethod): String =
+    when (method) {
+        PaymentMethod.CASH -> "Dinheiro"
+        PaymentMethod.PIX -> "Pix"
+        PaymentMethod.DEBIT -> "Débito"
+        PaymentMethod.CREDIT -> "Crédito"
+        PaymentMethod.DIGITAL_WALLET -> "Carteira"
+        PaymentMethod.OTHER -> "Outro"
+    }
+
 private fun accountKindLabel(kind: AccountKind): String =
     when (kind) {
         AccountKind.BUSINESS_BANK -> "Conta bancária da empresa"
@@ -701,6 +919,11 @@ private fun <T> ChoiceChips(
 
 private fun money(cents: Long): String =
     NumberFormat.getCurrencyInstance(Locale("pt", "BR")).format(cents / 100.0)
+
+private fun moneySigned(cents: Long): String {
+    val formatted = money(kotlin.math.abs(cents))
+    return if (cents < 0) "-$formatted" else "+$formatted"
+}
 
 private fun formatDate(epoch: Long): String =
     DateTimeFormatter.ofPattern("dd/MM/yyyy")

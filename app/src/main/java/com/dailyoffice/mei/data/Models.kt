@@ -108,8 +108,7 @@ data class StockMovement(
         Index("paymentStatus"),
         Index("imageSha256"),
         Index("companyId"),
-        Index("accountId"),
-        Index("counterpartyAccountId")
+        Index("accountId")
     ]
 )
 data class Receipt(
@@ -172,7 +171,8 @@ data class ReceiptItem(
         Index("kind"),
         Index("createdAt"),
         Index("companyId"),
-        Index("accountId")
+        Index("accountId"),
+        Index("counterpartyAccountId")
     ]
 )
 data class Transaction(

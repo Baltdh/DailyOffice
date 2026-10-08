@@ -32,9 +32,11 @@ fun FinanceScreen(
     val transactions by viewModel.transactions.collectAsStateWithLifecycle()
     val activeCompany by viewModel.activeCompany.collectAsStateWithLifecycle()
     val accounts by viewModel.accounts.collectAsStateWithLifecycle()
+    val accountFlows by viewModel.accountFlows.collectAsStateWithLifecycle()
 
     var addingKind by remember { mutableStateOf<EntryKind?>(null) }
     var showAccountDialog by remember { mutableStateOf(false) }
+    var transferMode by remember { mutableStateOf<TransferDialogMode?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var annualLimit by rememberSaveable { mutableStateOf("") }
     var openingMonth by rememberSaveable { mutableStateOf("") }
@@ -109,15 +111,48 @@ fun FinanceScreen(
             }
 
             item {
-                FinanceMetric(
-                    "Pago pelo titular",
-                    money(summary.ownerPaidBusinessExpensesCents),
-                    Modifier.fillMaxWidth()
-                )
-                Text(
-                    "Despesas da empresa pagas por conta ou cartão pessoal do titular.",
-                    style = MaterialTheme.typography.bodySmall
-                )
+                Card(Modifier.fillMaxWidth()) {
+                    Column(
+                        Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            "Dinheiro pessoal usado na empresa",
+                            style = MaterialTheme.typography.titleLarge
+                        )
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            FinanceMetric(
+                                "Pago pelo titular",
+                                money(summary.ownerPaidBusinessExpensesCents),
+                                Modifier.weight(1f)
+                            )
+                            FinanceMetric(
+                                "Reembolsado",
+                                money(summary.ownerReimbursedCents),
+                                Modifier.weight(1f)
+                            )
+                        }
+                        FinanceMetric(
+                            "Ainda a reembolsar",
+                            money(summary.ownerReimbursementOutstandingCents),
+                            Modifier.fillMaxWidth()
+                        )
+                        Text(
+                            "Reembolso é movimentação entre contas: não cria uma nova despesa e não entra como receita.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Button(
+                            onClick = { transferMode = TransferDialogMode.REIMBURSEMENT },
+                            enabled = summary.ownerReimbursementOutstandingCents > 0,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Reembolsar titular")
+                        }
+                    }
+                }
             }
 
             item {
@@ -135,16 +170,45 @@ fun FinanceScreen(
                             style = MaterialTheme.typography.bodySmall
                         )
                         accounts.forEach { account ->
-                            Text(
-                                "• ${account.name} — ${accountKindLabel(account.kind)}",
-                                style = MaterialTheme.typography.bodyMedium
-                            )
+                            val flow = accountFlows.firstOrNull { it.accountId == account.id }
+                            Column(
+                                Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Text(
+                                    account.name,
+                                    style = MaterialTheme.typography.titleSmall
+                                )
+                                Text(
+                                    accountKindLabel(account.kind),
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                if (flow != null) {
+                                    Text(
+                                        "Entradas ${money(flow.inflowCents)} • " +
+                                            "Saídas ${money(flow.outflowCents)} • " +
+                                            "Líquido ${moneySigned(flow.netCents)}",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+                            }
+                            HorizontalDivider()
                         }
-                        OutlinedButton(
-                            onClick = { showAccountDialog = true },
-                            modifier = Modifier.fillMaxWidth()
+                        Row(
+                            Modifier.horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text("Adicionar conta")
+                            OutlinedButton(
+                                onClick = { showAccountDialog = true }
+                            ) {
+                                Text("Adicionar conta")
+                            }
+                            Button(
+                                onClick = { transferMode = TransferDialogMode.TRANSFER },
+                                enabled = accounts.size >= 2
+                            ) {
+                                Text("Transferir entre contas")
+                            }
                         }
                     }
                 }
@@ -276,6 +340,9 @@ fun FinanceScreen(
                     TransactionCard(
                         transaction = tx,
                         accountName = accounts.firstOrNull { it.id == tx.accountId }?.name,
+                        counterpartyAccountName = accounts.firstOrNull {
+                            it.id == tx.counterpartyAccountId
+                        }?.name,
                         onDelete = if (tx.receiptId == null) {
                             {
                                 viewModel.deleteManualEntry(

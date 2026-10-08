@@ -106,6 +106,78 @@ class FinanceCalculatorTest {
     }
 
     @Test
+    fun reimbursementReducesOutstandingOwnerBalance() {
+        val accounts = listOf(
+            Account(
+                id = 1,
+                companyId = 1,
+                name = "Conta PJ",
+                kind = AccountKind.BUSINESS_BANK
+            ),
+            Account(
+                id = 2,
+                companyId = 1,
+                name = "Conta pessoal",
+                kind = AccountKind.OWNER_PERSONAL_BANK
+            )
+        )
+        val transactions = listOf(
+            Transaction(
+                accountId = 2,
+                description = "Compra paga pelo titular",
+                amountCents = 20_000,
+                ownership = Ownership.BUSINESS,
+                kind = EntryKind.EXPENSE,
+                paymentStatus = PaymentStatus.PAID
+            ),
+            Transaction(
+                accountId = 1,
+                counterpartyAccountId = 2,
+                description = "Reembolso parcial",
+                amountCents = 7_500,
+                ownership = Ownership.BUSINESS,
+                kind = EntryKind.REIMBURSEMENT,
+                paymentStatus = PaymentStatus.PAID
+            )
+        )
+
+        assertEquals(
+            7_500L,
+            FinanceCalculator.ownerReimbursedCents(transactions, accounts)
+        )
+        assertEquals(
+            12_500L,
+            FinanceCalculator.ownerReimbursementOutstandingCents(
+                transactions,
+                accounts
+            )
+        )
+    }
+
+    @Test
+    fun transfersMoveAccountFlowWithoutChangingIncomeOrExpenseTotals() {
+        val transactions = listOf(
+            Transaction(
+                accountId = 1,
+                counterpartyAccountId = 2,
+                description = "Transferência interna",
+                amountCents = 15_000,
+                ownership = Ownership.BUSINESS,
+                kind = EntryKind.TRANSFER,
+                paymentStatus = PaymentStatus.PAID
+            )
+        )
+
+        val totals = FinanceCalculator.summarize(transactions)
+        val flows = FinanceCalculator.accountFlows(transactions)
+
+        assertEquals(0L, totals.revenueCents)
+        assertEquals(0L, totals.businessExpensesCents)
+        assertEquals(15_000L, flows.first { it.accountId == 1L }.outflowCents)
+        assertEquals(15_000L, flows.first { it.accountId == 2L }.inflowCents)
+    }
+
+    @Test
     fun meiRevenueUsesOnlySelectedCalendarYear() {
         val transactions = listOf(
             revenue(2025, 12, 31, 20_000),

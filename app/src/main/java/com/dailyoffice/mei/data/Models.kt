@@ -9,7 +9,7 @@ import kotlinx.coroutines.flow.Flow
 enum class Ownership { BUSINESS, PERSONAL, MIXED, REVIEW }
 enum class PaymentStatus { PAID, PENDING, OVERDUE, CANCELLED }
 enum class PaymentMethod { CASH, PIX, DEBIT, CREDIT, DIGITAL_WALLET, OTHER }
-enum class EntryKind { EXPENSE, REVENUE, CONTRIBUTION, WITHDRAWAL }
+enum class EntryKind { EXPENSE, REVENUE, CONTRIBUTION, WITHDRAWAL, REIMBURSEMENT, TRANSFER }
 enum class AccountKind {
     BUSINESS_BANK,
     BUSINESS_CASH,
@@ -108,7 +108,8 @@ data class StockMovement(
         Index("paymentStatus"),
         Index("imageSha256"),
         Index("companyId"),
-        Index("accountId")
+        Index("accountId"),
+        Index("counterpartyAccountId")
     ]
 )
 data class Receipt(
@@ -179,6 +180,7 @@ data class Transaction(
     @ColumnInfo(defaultValue = "1")
     val companyId: Long = 1,
     val accountId: Long? = null,
+    val counterpartyAccountId: Long? = null,
     val receiptId: Long? = null,
     val description: String,
     val amountCents: Long,
@@ -354,7 +356,7 @@ interface TransactionDao {
         ReceiptItem::class,
         Transaction::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -578,6 +580,17 @@ abstract class DailyOfficeDb : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE transactions ADD COLUMN counterpartyAccountId INTEGER"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_transactions_counterpartyAccountId ON transactions(counterpartyAccountId)"
+                )
+            }
+        }
+
         fun get(context: Context): DailyOfficeDb =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -585,7 +598,7 @@ abstract class DailyOfficeDb : RoomDatabase() {
                     DailyOfficeDb::class.java,
                     "dailyoffice.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
                     .build()
                     .also { instance = it }
             }

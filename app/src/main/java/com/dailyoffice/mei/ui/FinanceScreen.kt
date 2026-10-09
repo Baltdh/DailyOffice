@@ -13,10 +13,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dailyoffice.mei.data.*
+import com.dailyoffice.mei.finance.FinanceCalculator
+import com.dailyoffice.mei.inventory.InventoryCalculator
 import com.dailyoffice.mei.viewmodel.ReceiptViewModel
 import java.text.NumberFormat
 import java.time.Instant
 import java.time.ZoneId
+import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -38,6 +41,7 @@ fun FinanceScreen(
     val activeCompany by viewModel.activeCompany.collectAsStateWithLifecycle()
     val accounts by viewModel.accounts.collectAsStateWithLifecycle()
     val accountFlows by viewModel.accountFlows.collectAsStateWithLifecycle()
+    val stockMovements by viewModel.stockMovements.collectAsStateWithLifecycle()
 
     var addingKind by remember { mutableStateOf<EntryKind?>(null) }
     var showAccountDialog by remember { mutableStateOf(false) }
@@ -46,6 +50,36 @@ fun FinanceScreen(
     var annualLimit by rememberSaveable { mutableStateOf("") }
     var openingDate by rememberSaveable { mutableStateOf("") }
     var taxYear by rememberSaveable { mutableStateOf("") }
+    var closingYear by rememberSaveable { mutableIntStateOf(YearMonth.now().year) }
+    var closingMonth by rememberSaveable { mutableIntStateOf(YearMonth.now().monthValue) }
+
+    val monthlyClosing = remember(
+        transactions,
+        accounts,
+        closingYear,
+        closingMonth
+    ) {
+        FinanceCalculator.monthlyClosing(
+            transactions = transactions,
+            accounts = accounts,
+            year = closingYear,
+            month = closingMonth
+        )
+    }
+
+    val inventoryMonth = remember(
+        stockMovements,
+        activeCompany?.id,
+        closingYear,
+        closingMonth
+    ) {
+        InventoryCalculator.monthlySummary(
+            movements = stockMovements,
+            companyId = activeCompany?.id ?: -1L,
+            year = closingYear,
+            month = closingMonth
+        )
+    }
 
     LaunchedEffect(config) {
         annualLimit = "%.2f".format(Locale("pt", "BR"), config.annualLimitCents / 100.0)
@@ -115,6 +149,140 @@ fun FinanceScreen(
                         money(summary.receivableCents),
                         Modifier.weight(1f)
                     )
+                }
+            }
+
+            item {
+                Card(Modifier.fillMaxWidth()) {
+                    Column(
+                        Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(
+                            "Fechamento mensal",
+                            style = MaterialTheme.typography.titleLarge
+                        )
+
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            OutlinedButton(
+                                onClick = {
+                                    val previous = YearMonth.of(
+                                        closingYear,
+                                        closingMonth
+                                    ).minusMonths(1)
+                                    closingYear = previous.year
+                                    closingMonth = previous.monthValue
+                                }
+                            ) {
+                                Text("←")
+                            }
+
+                            Text(
+                                monthYearLabel(closingYear, closingMonth),
+                                style = MaterialTheme.typography.titleMedium
+                            )
+
+                            OutlinedButton(
+                                onClick = {
+                                    val next = YearMonth.of(
+                                        closingYear,
+                                        closingMonth
+                                    ).plusMonths(1)
+                                    closingYear = next.year
+                                    closingMonth = next.monthValue
+                                }
+                            ) {
+                                Text("→")
+                            }
+                        }
+
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            FinanceMetric(
+                                "Faturamento bruto",
+                                money(monthlyClosing.grossRevenueCents),
+                                Modifier.weight(1f)
+                            )
+                            FinanceMetric(
+                                "Lucro estimado",
+                                moneySigned(monthlyClosing.estimatedProfitCents),
+                                Modifier.weight(1f)
+                            )
+                        }
+
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            FinanceMetric(
+                                "Despesas empresa",
+                                money(monthlyClosing.businessExpensesCents),
+                                Modifier.weight(1f)
+                            )
+                            FinanceMetric(
+                                "A receber",
+                                money(monthlyClosing.receivableCents),
+                                Modifier.weight(1f)
+                            )
+                        }
+
+                        Text(
+                            "Pagas: ${money(monthlyClosing.paidBusinessExpensesCents)} • " +
+                                "Pendentes/vencidas: ${money(monthlyClosing.pendingBusinessExpensesCents)}",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Text(
+                            "Pessoais: ${money(monthlyClosing.personalExpensesCents)} • " +
+                                "Aportes: ${money(monthlyClosing.contributionCents)} • " +
+                                "Retiradas: ${money(monthlyClosing.withdrawalCents)}",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Text(
+                            "Reembolsos: ${money(monthlyClosing.reimbursementCents)} • " +
+                                "Transferências internas: ${money(monthlyClosing.transferCents)}",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Text(
+                            "Pago pessoalmente pelo titular no mês: " +
+                                money(monthlyClosing.ownerFundedBusinessExpensesCents),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+
+                        HorizontalDivider()
+
+                        Text(
+                            "Estoque no mês",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            "Entradas por compra: ${inventoryMonth.purchaseEntries} • " +
+                                "Custo vinculado: ${money(inventoryMonth.purchaseCostCents)}",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Text(
+                            "Consumos: ${inventoryMonth.consumptionEntries} • " +
+                                "Perdas: ${inventoryMonth.lossEntries} • " +
+                                "Ajustes: ${inventoryMonth.adjustmentEntries}",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Text(
+                            "Transferências de estoque: " +
+                                "${inventoryMonth.transferOutEntries} saída(s) / " +
+                                "${inventoryMonth.transferInEntries} entrada(s)",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Text(
+                            "${monthlyClosing.transactionCount} lançamento(s) considerados. " +
+                                "O lucro estimado é faturamento bruto menos despesas empresariais registradas; " +
+                                "transferências, aportes e reembolsos não entram no resultado.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
                 }
             }
 
@@ -880,6 +1048,15 @@ private fun AddAccountDialog(
             TextButton(onClick = onDismiss) { Text("Cancelar") }
         }
     )
+}
+
+private fun monthYearLabel(year: Int, month: Int): String {
+    val names = listOf(
+        "Janeiro", "Fevereiro", "Março", "Abril",
+        "Maio", "Junho", "Julho", "Agosto",
+        "Setembro", "Outubro", "Novembro", "Dezembro"
+    )
+    return "${names[month.coerceIn(1, 12) - 1]} / $year"
 }
 
 private fun paymentMethodLabel(method: PaymentMethod): String =

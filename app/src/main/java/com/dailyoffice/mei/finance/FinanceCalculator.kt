@@ -28,6 +28,24 @@ data class AccountFlow(
         get() = inflowCents - outflowCents
 }
 
+data class MonthlyClosing(
+    val year: Int,
+    val month: Int,
+    val grossRevenueCents: Long = 0,
+    val businessExpensesCents: Long = 0,
+    val paidBusinessExpensesCents: Long = 0,
+    val pendingBusinessExpensesCents: Long = 0,
+    val personalExpensesCents: Long = 0,
+    val contributionCents: Long = 0,
+    val withdrawalCents: Long = 0,
+    val reimbursementCents: Long = 0,
+    val transferCents: Long = 0,
+    val receivableCents: Long = 0,
+    val ownerFundedBusinessExpensesCents: Long = 0,
+    val estimatedProfitCents: Long = 0,
+    val transactionCount: Int = 0
+)
+
 object FinanceCalculator {
     fun summarize(transactions: List<Transaction>): FinancialTotals {
         val active = transactions.filter {
@@ -172,6 +190,112 @@ object FinanceCalculator {
                 outflowCents = pair.second
             )
         }
+    }
+
+    fun monthlyClosing(
+        transactions: List<Transaction>,
+        accounts: List<Account>,
+        year: Int,
+        month: Int,
+        zoneId: ZoneId = ZoneId.systemDefault()
+    ): MonthlyClosing {
+        val safeMonth = month.coerceIn(1, 12)
+        val monthTransactions = transactions.filter { transaction ->
+            if (transaction.paymentStatus == PaymentStatus.CANCELLED) {
+                return@filter false
+            }
+
+            val date = Instant.ofEpochMilli(transaction.createdAt)
+                .atZone(zoneId)
+
+            date.year == year && date.monthValue == safeMonth
+        }
+
+        val grossRevenue = monthTransactions
+            .filter { it.kind == EntryKind.REVENUE }
+            .sumOf { it.amountCents }
+
+        val businessExpenses = monthTransactions
+            .filter {
+                it.kind == EntryKind.EXPENSE &&
+                    it.ownership == Ownership.BUSINESS
+            }
+            .sumOf { it.amountCents }
+
+        val paidBusinessExpenses = monthTransactions
+            .filter {
+                it.kind == EntryKind.EXPENSE &&
+                    it.ownership == Ownership.BUSINESS &&
+                    it.paymentStatus == PaymentStatus.PAID
+            }
+            .sumOf { it.amountCents }
+
+        val pendingBusinessExpenses = monthTransactions
+            .filter {
+                it.kind == EntryKind.EXPENSE &&
+                    it.ownership == Ownership.BUSINESS &&
+                    (
+                        it.paymentStatus == PaymentStatus.PENDING ||
+                            it.paymentStatus == PaymentStatus.OVERDUE
+                        )
+            }
+            .sumOf { it.amountCents }
+
+        val personalExpenses = monthTransactions
+            .filter {
+                it.kind == EntryKind.EXPENSE &&
+                    it.ownership == Ownership.PERSONAL
+            }
+            .sumOf { it.amountCents }
+
+        val contributions = monthTransactions
+            .filter { it.kind == EntryKind.CONTRIBUTION }
+            .sumOf { it.amountCents }
+
+        val withdrawals = monthTransactions
+            .filter { it.kind == EntryKind.WITHDRAWAL }
+            .sumOf { it.amountCents }
+
+        val reimbursements = monthTransactions
+            .filter { it.kind == EntryKind.REIMBURSEMENT }
+            .sumOf { it.amountCents }
+
+        val transfers = monthTransactions
+            .filter { it.kind == EntryKind.TRANSFER }
+            .sumOf { it.amountCents }
+
+        val receivables = monthTransactions
+            .filter {
+                it.kind == EntryKind.REVENUE &&
+                    (
+                        it.paymentStatus == PaymentStatus.PENDING ||
+                            it.paymentStatus == PaymentStatus.OVERDUE
+                        )
+            }
+            .sumOf { it.amountCents }
+
+        val ownerFunded = ownerPaidBusinessExpenses(
+            transactions = monthTransactions,
+            accounts = accounts
+        )
+
+        return MonthlyClosing(
+            year = year,
+            month = safeMonth,
+            grossRevenueCents = grossRevenue,
+            businessExpensesCents = businessExpenses,
+            paidBusinessExpensesCents = paidBusinessExpenses,
+            pendingBusinessExpensesCents = pendingBusinessExpenses,
+            personalExpensesCents = personalExpenses,
+            contributionCents = contributions,
+            withdrawalCents = withdrawals,
+            reimbursementCents = reimbursements,
+            transferCents = transfers,
+            receivableCents = receivables,
+            ownerFundedBusinessExpensesCents = ownerFunded,
+            estimatedProfitCents = grossRevenue - businessExpenses,
+            transactionCount = monthTransactions.size
+        )
     }
 
     fun revenueForYear(

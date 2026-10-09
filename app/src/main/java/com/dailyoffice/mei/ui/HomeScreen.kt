@@ -199,6 +199,14 @@ fun HomeScreen(
                             },
                             style = MaterialTheme.typography.bodySmall
                         )
+                        Text(
+                            if (mei.isFirstYear) {
+                                "Primeiro ano: limite proporcional. A partir de ${mei.openingYear + 1}: ${money(mei.annualLimitCents)} por ano."
+                            } else {
+                                "Limite anual completo: ${money(mei.annualLimitCents)}."
+                            },
+                            style = MaterialTheme.typography.bodySmall
+                        )
                     }
                 }
             }

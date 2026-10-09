@@ -2,7 +2,7 @@
 
 Aplicativo Android local-first para fotografar e arquivar comprovantes, extrair dados por OCR e organizar finanças pessoais e empresariais.
 
-## Estado atual — v0.10.0
+## Estado atual — v0.11.0
 
 O DailyOffice já possui:
 
@@ -46,6 +46,11 @@ O DailyOffice já possui:
 - limite proporcional calculado automaticamente no ano de abertura;
 - limite anual completo aplicado automaticamente a partir do ano seguinte;
 - painel mostra simultaneamente o limite do primeiro ano e o limite anual posterior;
+- fechamento mensal automático por empresa;
+- seleção de mês anterior/seguinte no financeiro;
+- fechamento mostra faturamento bruto, despesas empresariais pagas e pendentes, despesas pessoais, aportes, retiradas, reembolsos, transferências e valores a receber;
+- lucro estimado mensal sem somar aportes, reembolsos ou transferências internas;
+- resumo mensal de estoque com compras, custo vinculado, consumo, perdas, ajustes e transferências;
 - exportação dos dados da empresa ativa em CSV;
 - migrações do banco preservando os dados de versões anteriores.
 

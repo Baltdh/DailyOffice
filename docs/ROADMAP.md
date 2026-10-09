@@ -28,7 +28,8 @@
 - [x] aportes e retiradas
 - [x] contas pendentes/vencidas
 - [x] dashboard financeiro
-- [x] limite proporcional configurável do MEI
+- [x] limite proporcional do MEI calculado pela data de abertura
+- [x] limite anual completo aplicado automaticamente após o primeiro ano
 - [x] ano fiscal separado no cálculo do limite
 - [x] lançamentos cancelados excluídos dos totais
 - [x] múltiplas empresas/CNPJs com dados isolados

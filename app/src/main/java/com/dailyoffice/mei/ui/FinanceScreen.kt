@@ -44,15 +44,18 @@ fun FinanceScreen(
     var transferMode by remember { mutableStateOf<TransferDialogMode?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var annualLimit by rememberSaveable { mutableStateOf("") }
-    var openingMonth by rememberSaveable { mutableStateOf("") }
+    var openingDate by rememberSaveable { mutableStateOf("") }
     var taxYear by rememberSaveable { mutableStateOf("") }
-    var firstYear by rememberSaveable { mutableStateOf(true) }
 
     LaunchedEffect(config) {
         annualLimit = "%.2f".format(Locale("pt", "BR"), config.annualLimitCents / 100.0)
-        openingMonth = config.openingMonth.toString()
+        openingDate = "%02d/%02d/%04d".format(
+            Locale("pt", "BR"),
+            config.openingDay,
+            config.openingMonth,
+            config.openingYear
+        )
         taxYear = config.taxYear.toString()
-        firstYear = config.proportionalFirstYear
     }
 
     Scaffold(
@@ -261,7 +264,23 @@ fun FinanceScreen(
                             }
                         )
                         Text(
-                            "${mei.activeMonths} mês(es) considerados no cálculo.",
+                            if (mei.isFirstYear) {
+                                "Primeiro ano: ${mei.activeMonths} mês(es) considerados desde a abertura."
+                            } else {
+                                "Ano completo: 12 meses considerados."
+                            },
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Text(
+                            "Limite do primeiro ano: ${money(mei.firstYearLimitCents)}",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Text(
+                            "Limite anual após o primeiro ano: ${money(mei.annualLimitCents)}",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Text(
+                            "A partir de ${config.openingYear + 1}, o app usa automaticamente o limite anual completo.",
                             style = MaterialTheme.typography.bodySmall
                         )
 
@@ -283,33 +302,21 @@ fun FinanceScreen(
                             modifier = Modifier.fillMaxWidth()
                         )
                         OutlinedTextField(
-                            value = openingMonth,
-                            onValueChange = { openingMonth = it.filter(Char::isDigit).take(2) },
-                            label = { Text("Mês de abertura (1 a 12)") },
+                            value = openingDate,
+                            onValueChange = { openingDate = it.take(10) },
+                            label = { Text("Data de abertura (dd/mm/aaaa)") },
+                            supportingText = {
+                                Text(
+                                    "O primeiro ano é calculado proporcionalmente. Nos anos seguintes, o limite anual completo é aplicado automaticamente."
+                                )
+                            },
                             modifier = Modifier.fillMaxWidth()
                         )
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text("Primeiro ano do MEI")
-                                Text(
-                                    "Usa limite proporcional pelos meses ativos.",
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                            }
-                            Switch(
-                                checked = firstYear,
-                                onCheckedChange = { firstYear = it }
-                            )
-                        }
                         Button(
                             onClick = {
                                 viewModel.updateMeiConfig(
                                     annualLimit = annualLimit,
-                                    openingMonth = openingMonth,
-                                    firstYear = firstYear,
+                                    openingDate = openingDate,
                                     taxYear = taxYear,
                                     onError = { error = it }
                                 )

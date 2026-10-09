@@ -235,12 +235,19 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
             revenueCents = revenue,
             annualLimitCents = config.annualLimitCents,
             openingMonth = config.openingMonth,
-            proportionalFirstYear = config.proportionalFirstYear
+            openingYear = config.openingYear,
+            taxYear = config.taxYear
         )
     }.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5_000),
-        MeiCalculator.calculate(0, 8_100_000L, 8, true)
+        MeiCalculator.calculate(
+            revenueCents = 0,
+            annualLimitCents = 8_100_000L,
+            openingMonth = LocalDate.now().monthValue,
+            openingYear = LocalDate.now().year,
+            taxYear = LocalDate.now().year
+        )
     )
 
     init {
@@ -1041,20 +1048,15 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
 
     fun updateMeiConfig(
         annualLimit: String,
-        openingMonth: String,
-        firstYear: Boolean,
+        openingDate: String,
         taxYear: String,
         onError: (String) -> Unit = {}
     ) {
         val limit = parseCents(annualLimit)
             ?: return onError("Informe um teto anual válido.")
 
-        val month = openingMonth.toIntOrNull()
-            ?: return onError("Informe o mês de abertura de 1 a 12.")
-
-        if (month !in 1..12) {
-            return onError("O mês de abertura deve estar entre 1 e 12.")
-        }
+        val opening = parseLocalDate(openingDate)
+            ?: return onError("Informe a data de abertura no formato dd/mm/aaaa.")
 
         val year = taxYear.toIntOrNull()
             ?: return onError("Informe um ano fiscal válido.")
@@ -1063,12 +1065,19 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
             return onError("O ano fiscal deve estar entre 2000 e 2100.")
         }
 
+        if (year < opening.year) {
+            return onError(
+                "O ano fiscal não pode ser anterior ao ano de abertura da empresa."
+            )
+        }
+
         _meiConfig.value = meiSettings.update(
             companyId = _activeCompanyId.value,
             config = MeiConfig(
                 annualLimitCents = limit,
-                openingMonth = month,
-                proportionalFirstYear = firstYear,
+                openingDay = opening.dayOfMonth,
+                openingMonth = opening.monthValue,
+                openingYear = opening.year,
                 taxYear = year
             )
         )
@@ -1516,6 +1525,21 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
 
     private fun formatCents(cents: Long): String =
         "%.2f".format(java.util.Locale("pt", "BR"), cents / 100.0)
+
+    private fun parseLocalDate(value: String): LocalDate? {
+        if (value.isBlank()) return null
+
+        val normalized = value
+            .replace('.', '/')
+            .replace('-', '/')
+
+        return runCatching {
+            LocalDate.parse(
+                normalized,
+                DateTimeFormatter.ofPattern("d/M/uuuu")
+            )
+        }.getOrNull()
+    }
 
     private fun parseDate(value: String): Long? {
         if (value.isBlank()) return null

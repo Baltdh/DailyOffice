@@ -50,8 +50,8 @@ fun FinanceScreen(
     var annualLimit by rememberSaveable { mutableStateOf("") }
     var openingDate by rememberSaveable { mutableStateOf("") }
     var taxYear by rememberSaveable { mutableStateOf("") }
-    var closingYear by rememberSaveable { mutableIntStateOf(YearMonth.now().year) }
-    var closingMonth by rememberSaveable { mutableIntStateOf(YearMonth.now().monthValue) }
+    var closingYear by rememberSaveable { mutableStateOf(YearMonth.now().year) }
+    var closingMonth by rememberSaveable { mutableStateOf(YearMonth.now().monthValue) }
 
     val monthlyClosing = remember(
         transactions,

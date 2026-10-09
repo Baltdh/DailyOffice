@@ -2,7 +2,7 @@
 
 Aplicativo Android local-first para fotografar e arquivar comprovantes, extrair dados por OCR e organizar finanças pessoais e empresariais.
 
-## Estado atual — v0.9.0
+## Estado atual — v0.10.0
 
 O DailyOffice já possui:
 
@@ -42,6 +42,10 @@ O DailyOffice já possui:
 - reembolso do titular com controle de valor já devolvido e saldo ainda pendente;
 - movimentação por conta com entradas, saídas e saldo líquido do período;
 - exportação CSV também registra a conta de destino de transferências e reembolsos;
+- data completa de abertura do MEI por empresa;
+- limite proporcional calculado automaticamente no ano de abertura;
+- limite anual completo aplicado automaticamente a partir do ano seguinte;
+- painel mostra simultaneamente o limite do primeiro ano e o limite anual posterior;
 - exportação dos dados da empresa ativa em CSV;
 - migrações do banco preservando os dados de versões anteriores.
 

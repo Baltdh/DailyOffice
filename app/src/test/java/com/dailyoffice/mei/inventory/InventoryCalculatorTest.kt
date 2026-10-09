@@ -6,6 +6,8 @@ import com.dailyoffice.mei.data.StockMovementType
 import com.dailyoffice.mei.data.StockUnit
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import java.time.LocalDate
+import java.time.ZoneId
 
 class InventoryCalculatorTest {
     private val salmon = InventoryProduct(
@@ -56,6 +58,60 @@ class InventoryCalculatorTest {
         assertEquals(3_000L, companyTwo.companyQuantityMilli)
         assertEquals(10_000L, companyOne.physicalQuantityMilli)
         assertEquals(10_000L, companyTwo.physicalQuantityMilli)
+    }
+
+    @Test
+    fun monthlySummaryUsesOnlySelectedCompanyAndMonth() {
+        val utc = ZoneId.of("UTC")
+        val movements = listOf(
+            StockMovement(
+                productId = 1,
+                companyId = 1,
+                type = StockMovementType.PURCHASE,
+                quantityMilli = 5_000,
+                totalCostCents = 40_000,
+                createdAt = LocalDate.of(2026, 10, 2)
+                    .atStartOfDay(utc).toInstant().toEpochMilli()
+            ),
+            StockMovement(
+                productId = 1,
+                companyId = 1,
+                type = StockMovementType.LOSS,
+                quantityMilli = 500,
+                createdAt = LocalDate.of(2026, 10, 4)
+                    .atStartOfDay(utc).toInstant().toEpochMilli()
+            ),
+            StockMovement(
+                productId = 1,
+                companyId = 2,
+                type = StockMovementType.PURCHASE,
+                quantityMilli = 2_000,
+                totalCostCents = 99_000,
+                createdAt = LocalDate.of(2026, 10, 4)
+                    .atStartOfDay(utc).toInstant().toEpochMilli()
+            ),
+            StockMovement(
+                productId = 1,
+                companyId = 1,
+                type = StockMovementType.CONSUMPTION,
+                quantityMilli = 1_000,
+                createdAt = LocalDate.of(2026, 9, 30)
+                    .atStartOfDay(utc).toInstant().toEpochMilli()
+            )
+        )
+
+        val result = InventoryCalculator.monthlySummary(
+            movements = movements,
+            companyId = 1,
+            year = 2026,
+            month = 10,
+            zoneId = utc
+        )
+
+        assertEquals(40_000L, result.purchaseCostCents)
+        assertEquals(1, result.purchaseEntries)
+        assertEquals(1, result.lossEntries)
+        assertEquals(0, result.consumptionEntries)
     }
 
     @Test

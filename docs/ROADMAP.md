@@ -33,8 +33,8 @@
 - [x] ano fiscal separado no cálculo do limite
 - [x] lançamentos cancelados excluídos dos totais
 - [x] múltiplas empresas/CNPJs com dados isolados
-- [ ] fechamento mensal
-- [ ] relatório mensal de receitas brutas
+- [x] fechamento mensal automático
+- [x] relatório mensal de receitas brutas no app
 - [ ] categorias e regras aprendidas pelo usuário
 - [ ] alertas de vencimento com WorkManager
 
@@ -68,5 +68,6 @@
 - [ ] associação automática comprovante ↔ transação
 - [ ] fila de divergências
 - [ ] importação de repasses do iFood
-- [ ] fechamento mensal assistido
+- [x] fechamento mensal assistido no painel
+- [ ] confirmação/congelamento de fechamento mensal
 - [ ] saldos iniciais e conciliação de saldo por conta

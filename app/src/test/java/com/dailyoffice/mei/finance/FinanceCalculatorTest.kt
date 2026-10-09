@@ -178,6 +178,86 @@ class FinanceCalculatorTest {
     }
 
     @Test
+    fun monthlyClosingSeparatesRevenueExpensesAndInternalMovements() {
+        val accounts = listOf(
+            Account(
+                id = 1,
+                companyId = 1,
+                name = "Conta PJ",
+                kind = AccountKind.BUSINESS_BANK
+            ),
+            Account(
+                id = 2,
+                companyId = 1,
+                name = "Conta pessoal",
+                kind = AccountKind.OWNER_PERSONAL_BANK
+            )
+        )
+
+        val transactions = listOf(
+            transactionAt(
+                2026, 10, 3,
+                amount = 100_000,
+                kind = EntryKind.REVENUE,
+                ownership = Ownership.BUSINESS,
+                accountId = 1
+            ),
+            transactionAt(
+                2026, 10, 4,
+                amount = 30_000,
+                kind = EntryKind.EXPENSE,
+                ownership = Ownership.BUSINESS,
+                accountId = 1
+            ),
+            transactionAt(
+                2026, 10, 5,
+                amount = 8_000,
+                kind = EntryKind.EXPENSE,
+                ownership = Ownership.BUSINESS,
+                accountId = 2
+            ),
+            transactionAt(
+                2026, 10, 6,
+                amount = 12_000,
+                kind = EntryKind.TRANSFER,
+                ownership = Ownership.BUSINESS,
+                accountId = 1,
+                counterpartyAccountId = 2
+            ),
+            transactionAt(
+                2026, 9, 30,
+                amount = 999_999,
+                kind = EntryKind.REVENUE,
+                ownership = Ownership.BUSINESS,
+                accountId = 1
+            ),
+            transactionAt(
+                2026, 10, 8,
+                amount = 50_000,
+                kind = EntryKind.REVENUE,
+                ownership = Ownership.BUSINESS,
+                accountId = 1,
+                status = PaymentStatus.CANCELLED
+            )
+        )
+
+        val result = FinanceCalculator.monthlyClosing(
+            transactions = transactions,
+            accounts = accounts,
+            year = 2026,
+            month = 10,
+            zoneId = utc
+        )
+
+        assertEquals(100_000L, result.grossRevenueCents)
+        assertEquals(38_000L, result.businessExpensesCents)
+        assertEquals(62_000L, result.estimatedProfitCents)
+        assertEquals(8_000L, result.ownerFundedBusinessExpensesCents)
+        assertEquals(12_000L, result.transferCents)
+        assertEquals(4, result.transactionCount)
+    }
+
+    @Test
     fun meiRevenueUsesOnlySelectedCalendarYear() {
         val transactions = listOf(
             revenue(2025, 12, 31, 20_000),
@@ -200,6 +280,31 @@ class FinanceCalculatorTest {
 
         assertEquals(70_000L, revenue2026)
     }
+
+    private fun transactionAt(
+        year: Int,
+        month: Int,
+        day: Int,
+        amount: Long,
+        kind: EntryKind,
+        ownership: Ownership,
+        accountId: Long? = null,
+        counterpartyAccountId: Long? = null,
+        status: PaymentStatus = PaymentStatus.PAID
+    ): Transaction =
+        Transaction(
+            accountId = accountId,
+            counterpartyAccountId = counterpartyAccountId,
+            description = "Teste",
+            amountCents = amount,
+            ownership = ownership,
+            kind = kind,
+            paymentStatus = status,
+            createdAt = LocalDate.of(year, month, day)
+                .atStartOfDay(utc)
+                .toInstant()
+                .toEpochMilli()
+        )
 
     private fun revenue(
         year: Int,

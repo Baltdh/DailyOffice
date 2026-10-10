@@ -33,6 +33,8 @@
 - [x] ano fiscal separado no cálculo do limite
 - [x] lançamentos cancelados excluídos dos totais
 - [x] múltiplas empresas/CNPJs com dados isolados
+- [x] porte/enquadramento por empresa: MEI, ME, EPP ou Outro
+- [x] regras do teto MEI condicionadas ao enquadramento selecionado
 - [x] fechamento mensal automático
 - [x] relatório mensal de receitas brutas no app
 - [ ] categorias e regras aprendidas pelo usuário
@@ -63,7 +65,13 @@
 - [x] fluxo de entradas/saídas por conta
 - [ ] relatório consolidado sem misturar os livros de cada CNPJ
 
-## M6 — Conciliação
+## M6 — Regime e enquadramento — em andamento
+- [x] seleção de porte/enquadramento da empresa
+- [ ] regime tributário separado (Simples Nacional, Lucro Presumido, Lucro Real e outros)
+- [ ] parâmetros e relatórios específicos para ME/EPP
+- [ ] histórico de mudança de enquadramento sem alterar períodos anteriores
+
+## M7 — Conciliação
 - [ ] importação CSV/OFX
 - [ ] associação automática comprovante ↔ transação
 - [ ] fila de divergências

@@ -53,7 +53,7 @@ O DailyOffice já possui:
 - fechamento mostra faturamento bruto, despesas empresariais pagas e pendentes, despesas pessoais, aportes, retiradas, reembolsos, transferências e valores a receber;
 - lucro estimado mensal sem somar aportes, reembolsos ou transferências internas;
 - resumo mensal de estoque com compras, custo vinculado, consumo, perdas, ajustes e transferências;
-- exportação dos dados da empresa ativa em CSV;
+- exportação dos dados da empresa ativa em CSV, incluindo nome, CNPJ e enquadramento;
 - migrações do banco preservando os dados de versões anteriores.
 
 ## Fluxo de comprovantes

@@ -31,8 +31,7 @@ object MeiCalculator {
         val safeTaxYear = taxYear.coerceIn(2000, 2100)
 
         val firstYearMonths = 13 - safeMonth
-        val monthlyLimit = safeAnnualLimit / 12L
-        val firstYearLimit = monthlyLimit * firstYearMonths
+        val firstYearLimit = safeAnnualLimit * firstYearMonths / 12L
 
         val beforeOpening = safeTaxYear < safeOpeningYear
         val firstYear = safeTaxYear == safeOpeningYear

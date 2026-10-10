@@ -17,7 +17,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dailyoffice.mei.data.Company
+import com.dailyoffice.mei.data.CompanyProfileRules
 import com.dailyoffice.mei.data.CompanyType
+import com.dailyoffice.mei.data.TaxRegime
 import com.dailyoffice.mei.data.Ownership
 import com.dailyoffice.mei.data.PaymentStatus
 import com.dailyoffice.mei.data.Receipt
@@ -389,7 +391,7 @@ fun HomeScreen(
         CompanyFormDialog(
             company = companyFormTarget,
             onDismiss = { showCompanyForm = false },
-            onSave = { name, cnpj, owner, companyType ->
+            onSave = { name, cnpj, owner, companyType, taxRegime ->
                 val target = companyFormTarget
                 if (target == null) {
                     viewModel.createCompany(
@@ -397,6 +399,7 @@ fun HomeScreen(
                         cnpj = cnpj,
                         ownerName = owner,
                         companyType = companyType,
+                        taxRegime = taxRegime,
                         onSaved = {
                             showCompanyForm = false
                             message = "Empresa cadastrada e selecionada."
@@ -410,6 +413,7 @@ fun HomeScreen(
                         cnpj = cnpj,
                         ownerName = owner,
                         companyType = companyType,
+                        taxRegime = taxRegime,
                         onSaved = {
                             showCompanyForm = false
                             message = "Cadastro da empresa atualizado."
@@ -475,6 +479,10 @@ private fun CompanyCard(
                     companyTypeLabel(company.companyType),
                     style = MaterialTheme.typography.bodySmall
                 )
+                Text(
+                    taxRegimeLabel(company.taxRegime),
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
             if (!company?.cnpj.isNullOrBlank()) {
                 Text(
@@ -526,6 +534,10 @@ private fun CompanySelectorDialog(
                                     companyTypeLabel(company.companyType),
                                     style = MaterialTheme.typography.bodySmall
                                 )
+                                Text(
+                                    taxRegimeLabel(company.taxRegime),
+                                    style = MaterialTheme.typography.bodySmall
+                                )
                                 if (company.cnpj.isNotBlank()) {
                                     Text(
                                         formatCnpj(company.cnpj),
@@ -560,7 +572,8 @@ private fun CompanyFormDialog(
         name: String,
         cnpj: String,
         owner: String,
-        companyType: CompanyType
+        companyType: CompanyType,
+        taxRegime: TaxRegime
     ) -> Unit
 ) {
     var name by remember(company?.id) {
@@ -574,6 +587,9 @@ private fun CompanyFormDialog(
     }
     var companyType by remember(company?.id) {
         mutableStateOf(company?.companyType ?: CompanyType.MEI)
+    }
+    var taxRegime by remember(company?.id) {
+        mutableStateOf(company?.taxRegime ?: TaxRegime.SIMEI)
     }
 
     AlertDialog(
@@ -631,15 +647,63 @@ private fun CompanyFormDialog(
                     CompanyType.entries.forEach { candidate ->
                         FilterChip(
                             selected = companyType == candidate,
-                            onClick = { companyType = candidate },
+                            onClick = {
+                                companyType = candidate
+                                taxRegime = CompanyProfileRules.normalizedTaxRegime(
+                                    companyType = candidate,
+                                    taxRegime = taxRegime
+                                )
+                            },
                             label = { Text(companyTypeLabel(candidate)) }
                         )
+                    }
+                }
+
+                Text(
+                    "Regime tributário",
+                    style = MaterialTheme.typography.labelLarge
+                )
+                if (companyType == CompanyType.MEI) {
+                    Text(
+                        "SIMEI — regime próprio do MEI",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                } else {
+                    Text(
+                        "Selecione o regime separadamente do porte da empresa.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        CompanyProfileRules.allowedTaxRegimes(companyType)
+                            .forEach { candidate ->
+                                FilterChip(
+                                    selected = taxRegime == candidate,
+                                    onClick = { taxRegime = candidate },
+                                    label = { Text(taxRegimeLabel(candidate)) },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
                     }
                 }
             }
         },
         confirmButton = {
-            Button(onClick = { onSave(name, cnpj, owner, companyType) }) {
+            Button(
+                onClick = {
+                    onSave(
+                        name,
+                        cnpj,
+                        owner,
+                        companyType,
+                        CompanyProfileRules.normalizedTaxRegime(
+                            companyType = companyType,
+                            taxRegime = taxRegime
+                        )
+                    )
+                }
+            ) {
                 Text("Salvar")
             }
         },
@@ -655,6 +719,15 @@ private fun companyTypeLabel(type: CompanyType): String =
         CompanyType.ME -> "ME — Microempresa"
         CompanyType.EPP -> "EPP — Empresa de Pequeno Porte"
         CompanyType.OTHER -> "Outro enquadramento"
+    }
+
+private fun taxRegimeLabel(regime: TaxRegime): String =
+    when (regime) {
+        TaxRegime.SIMEI -> "SIMEI — MEI"
+        TaxRegime.SIMPLES_NACIONAL -> "Simples Nacional"
+        TaxRegime.LUCRO_PRESUMIDO -> "Lucro Presumido"
+        TaxRegime.LUCRO_REAL -> "Lucro Real"
+        TaxRegime.OTHER -> "Outro / não informado"
     }
 
 @Composable

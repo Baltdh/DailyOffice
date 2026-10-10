@@ -1281,6 +1281,7 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
         cnpj: String,
         ownerName: String,
         companyType: CompanyType,
+        taxRegime: TaxRegime,
         onSaved: () -> Unit = {},
         onError: (String) -> Unit = {}
     ) {
@@ -1298,12 +1299,17 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
 
         viewModelScope.launch(Dispatchers.IO) {
             runCatching {
+                val normalizedTaxRegime = CompanyProfileRules.normalizedTaxRegime(
+                    companyType = companyType,
+                    taxRegime = taxRegime
+                )
                 val id = companyDao.insert(
                     Company(
                         name = cleanName,
                         cnpj = cleanCnpj,
                         ownerName = ownerName.trim(),
-                        companyType = companyType
+                        companyType = companyType,
+                        taxRegime = normalizedTaxRegime
                     )
                 )
                 seedDefaultAccounts(id)
@@ -1368,6 +1374,7 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
         cnpj: String,
         ownerName: String,
         companyType: CompanyType,
+        taxRegime: TaxRegime,
         onSaved: () -> Unit = {},
         onError: (String) -> Unit = {}
     ) {
@@ -1385,12 +1392,17 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
 
         viewModelScope.launch(Dispatchers.IO) {
             runCatching {
+                val normalizedTaxRegime = CompanyProfileRules.normalizedTaxRegime(
+                    companyType = companyType,
+                    taxRegime = taxRegime
+                )
                 companyDao.update(
                     company.copy(
                         name = cleanName,
                         cnpj = cleanCnpj,
                         ownerName = ownerName.trim(),
-                        companyType = companyType
+                        companyType = companyType,
+                        taxRegime = normalizedTaxRegime
                     )
                 )
             }.onSuccess {

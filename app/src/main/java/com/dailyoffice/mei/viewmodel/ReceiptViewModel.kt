@@ -1411,6 +1411,7 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
             runCatching {
                 CsvExporter.export(
                     getApplication(),
+                    activeCompany.value,
                     receipts.value,
                     transactions.value,
                     accounts.value

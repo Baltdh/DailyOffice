@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.Flow
 enum class Ownership { BUSINESS, PERSONAL, MIXED, REVIEW }
 enum class PaymentStatus { PAID, PENDING, OVERDUE, CANCELLED }
 enum class PaymentMethod { CASH, PIX, DEBIT, CREDIT, DIGITAL_WALLET, OTHER }
+enum class CompanyType { MEI, ME, EPP, OTHER }
 enum class EntryKind { EXPENSE, REVENUE, CONTRIBUTION, WITHDRAWAL, REIMBURSEMENT, TRANSFER }
 enum class AccountKind {
     BUSINESS_BANK,
@@ -39,6 +40,8 @@ data class Company(
     val name: String,
     val cnpj: String = "",
     val ownerName: String = "",
+    @ColumnInfo(defaultValue = "'MEI'")
+    val companyType: CompanyType = CompanyType.MEI,
     val active: Boolean = true,
     val createdAt: Long = System.currentTimeMillis()
 )
@@ -356,7 +359,7 @@ interface TransactionDao {
         ReceiptItem::class,
         Transaction::class
     ],
-    version = 9,
+    version = 10,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -591,6 +594,14 @@ abstract class DailyOfficeDb : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE companies ADD COLUMN companyType TEXT NOT NULL DEFAULT 'MEI'"
+                )
+            }
+        }
+
         fun get(context: Context): DailyOfficeDb =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -598,7 +609,7 @@ abstract class DailyOfficeDb : RoomDatabase() {
                     DailyOfficeDb::class.java,
                     "dailyoffice.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
                     .build()
                     .also { instance = it }
             }
@@ -609,6 +620,8 @@ class Converters {
     @TypeConverter fun ownershipToString(value: Ownership) = value.name
     @TypeConverter fun stringToOwnership(value: String) = Ownership.valueOf(value)
     @TypeConverter fun paymentToString(value: PaymentMethod) = value.name
+    @TypeConverter fun companyTypeToString(value: CompanyType) = value.name
+    @TypeConverter fun stringToCompanyType(value: String) = CompanyType.valueOf(value)
     @TypeConverter fun stringToPayment(value: String) = PaymentMethod.valueOf(value)
     @TypeConverter fun statusToString(value: PaymentStatus) = value.name
     @TypeConverter fun stringToStatus(value: String) = PaymentStatus.valueOf(value)

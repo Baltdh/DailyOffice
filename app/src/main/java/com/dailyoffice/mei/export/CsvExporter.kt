@@ -29,7 +29,7 @@ object CsvExporter {
         val accountById = accounts.associateBy { it.id }
 
         file.bufferedWriter().use { out ->
-            out.appendLine("EMPRESA;CNPJ;ENQUADRAMENTO;TIPO;ID;DATA;DESCRICAO;VALOR;CLASSIFICACAO;PAGAMENTO;STATUS;CONTA_ORIGEM;CONTA_DESTINO;DOCUMENTO;CATEGORIA;COMPROVANTE_ID;ENTRA_NO_FLUXO")
+            out.appendLine("EMPRESA;CNPJ;TIPO_EMPRESA;REGIME_TRIBUTARIO;TIPO;ID;DATA;DESCRICAO;VALOR;CLASSIFICACAO;PAGAMENTO;STATUS;CONTA_ORIGEM;CONTA_DESTINO;DOCUMENTO;CATEGORIA;COMPROVANTE_ID;ENTRA_NO_FLUXO")
 
             receipts.forEach { receipt ->
                 out.appendLine(
@@ -37,6 +37,7 @@ object CsvExporter {
                         company?.name.orEmpty(),
                         company?.cnpj.orEmpty(),
                         company?.companyType?.name.orEmpty(),
+                        company?.taxRegime?.name.orEmpty(),
                         "COMPROVANTE",
                         receipt.id.toString(),
                         date(receipt.issuedAt ?: receipt.createdAt),
@@ -61,6 +62,7 @@ object CsvExporter {
                         company?.name.orEmpty(),
                         company?.cnpj.orEmpty(),
                         company?.companyType?.name.orEmpty(),
+                        company?.taxRegime?.name.orEmpty(),
                         tx.kind.name,
                         tx.id.toString(),
                         date(tx.createdAt),

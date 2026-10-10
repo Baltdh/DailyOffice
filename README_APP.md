@@ -1,8 +1,8 @@
-# DailyOffice — contador MEI pessoal
+# DailyOffice — gestão financeira empresarial
 
-Aplicativo Android local-first para fotografar e arquivar comprovantes, extrair dados por OCR e organizar finanças pessoais e empresariais.
+Aplicativo Android local-first para fotografar e arquivar comprovantes, extrair dados por OCR e organizar finanças pessoais e empresariais, com suporte a múltiplos CNPJs e diferentes enquadramentos.
 
-## Estado atual — v0.11.0
+## Estado atual — v0.12.0
 
 O DailyOffice já possui:
 
@@ -25,6 +25,8 @@ O DailyOffice já possui:
 - acompanhamento configurável do limite MEI por ano fiscal;
 - faturamento do MEI limitado ao ano selecionado;
 - múltiplas empresas/CNPJs no mesmo aplicativo;
+- seleção de porte/enquadramento por empresa: MEI, ME, EPP ou Outro;
+- regras e painel de limite MEI exibidos somente para empresas cadastradas como MEI;
 - troca da empresa ativa com finanças, comprovantes e configuração MEI isolados;
 - estoque físico compartilhado com saldo de propriedade separado por empresa;
 - entradas, consumo, perdas e ajustes de estoque;
@@ -75,6 +77,7 @@ O DailyOffice já possui:
 - Aporte não é receita.
 - Retirada não é despesa operacional.
 - O faturamento usado no limite MEI vem de lançamentos de Receita do ano fiscal selecionado.
+- O controle de teto do MEI só é aplicado às empresas marcadas como MEI; ME/EPP continuam com financeiro e fechamento mensal sem teto MEI.
 - Dados de empresas diferentes não devem ser somados automaticamente.
 - Transferência de estoque no app é controle interno e não substitui documentação fiscal eventualmente exigida entre CNPJs.
 

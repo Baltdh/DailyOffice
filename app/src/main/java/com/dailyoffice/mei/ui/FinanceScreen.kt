@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dailyoffice.mei.data.*
+import com.dailyoffice.mei.finance.CompanyCeiling
 import com.dailyoffice.mei.finance.FinanceCalculator
 import com.dailyoffice.mei.inventory.InventoryCalculator
 import com.dailyoffice.mei.viewmodel.ReceiptViewModel
@@ -426,14 +427,14 @@ fun FinanceScreen(
             }
 
             item {
-                if (activeCompany?.companyType == CompanyType.MEI) {
+                if (activeCompany?.companyType != CompanyType.OTHER) {
                     Card(Modifier.fillMaxWidth()) {
                         Column(
                             Modifier.padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             Text(
-                                "Limite do MEI • ${config.taxYear}",
+                                "Teto de receita • ${CompanyCeiling.label(activeCompany?.companyType ?: CompanyType.MEI)} • ${config.taxYear}",
                                 style = MaterialTheme.typography.titleLarge
                             )
                             Text("${money(mei.revenueCents)} de ${money(mei.limitCents)}")
@@ -457,11 +458,11 @@ fun FinanceScreen(
                                 style = MaterialTheme.typography.bodySmall
                             )
                             Text(
-                                "Limite do primeiro ano: ${money(mei.firstYearLimitCents)}",
+                                "Teto proporcional no ano de abertura: ${money(mei.firstYearLimitCents)}",
                                 style = MaterialTheme.typography.bodySmall
                             )
                             Text(
-                                "Limite anual após o primeiro ano: ${money(mei.annualLimitCents)}",
+                                "Teto anual integral: ${money(mei.annualLimitCents)}",
                                 style = MaterialTheme.typography.bodySmall
                             )
                             Text(
@@ -469,9 +470,12 @@ fun FinanceScreen(
                                 style = MaterialTheme.typography.bodySmall
                             )
 
+                            if (activeCompany?.companyType == CompanyType.EPP) {
+                                Text("Faixa EPP: receita acima de R$ 360.000 até R$ 4.800.000 por ano. O teto não é imposto a pagar.", style = MaterialTheme.typography.bodySmall)
+                            }
                             HorizontalDivider()
 
-                            OutlinedTextField(
+                            if (activeCompany?.companyType == CompanyType.MEI) OutlinedTextField(
                                 value = annualLimit,
                                 onValueChange = { annualLimit = it },
                                 label = { Text("Teto anual MEI (R$)") },
@@ -514,7 +518,7 @@ fun FinanceScreen(
                                 },
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text("Salvar configuração do MEI")
+                                Text("Salvar ano fiscal e abertura")
                             }
                         }
                     }

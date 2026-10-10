@@ -67,7 +67,8 @@
 
 ## M6 — Regime e enquadramento — em andamento
 - [x] seleção de porte/enquadramento da empresa
-- [ ] regime tributário separado (Simples Nacional, Lucro Presumido, Lucro Real e outros)
+- [x] regime tributário separado (SIMEI, Simples Nacional, Lucro Presumido, Lucro Real e outros)
+- [x] validação básica entre MEI/SIMEI e ME/EPP
 - [ ] parâmetros e relatórios específicos para ME/EPP
 - [ ] histórico de mudança de enquadramento sem alterar períodos anteriores
 

@@ -95,7 +95,15 @@ fun FinanceScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Financeiro e MEI") },
+                title = {
+                    Text(
+                        if (activeCompany?.companyType == CompanyType.MEI) {
+                            "Financeiro e MEI"
+                        } else {
+                            "Financeiro"
+                        }
+                    )
+                },
                 navigationIcon = {
                     TextButton(onClick = onBack) { Text("Voltar") }
                 }
@@ -114,6 +122,10 @@ fun FinanceScreen(
                 Text(
                     activeCompany?.name ?: "Empresa ativa",
                     style = MaterialTheme.typography.bodyMedium
+                )
+                Text(
+                    companyTypeLabel(activeCompany?.companyType ?: CompanyType.OTHER),
+                    style = MaterialTheme.typography.bodySmall
                 )
             }
             item {
@@ -410,88 +422,118 @@ fun FinanceScreen(
             }
 
             item {
-                Card(Modifier.fillMaxWidth()) {
-                    Column(
-                        Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Text(
-                            "Limite do MEI • ${config.taxYear}",
-                            style = MaterialTheme.typography.titleLarge
-                        )
-                        Text("${money(mei.revenueCents)} de ${money(mei.limitCents)}")
-                        LinearProgressIndicator(
-                            progress = mei.usage.coerceIn(0f, 1f),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Text(
-                            if (mei.excessCents > 0) {
-                                "Acima do limite em ${money(mei.excessCents)}"
-                            } else {
-                                "Restante: ${money(mei.remainingCents)}"
-                            }
-                        )
-                        Text(
-                            if (mei.isFirstYear) {
-                                "Primeiro ano: ${mei.activeMonths} mês(es) considerados desde a abertura."
-                            } else {
-                                "Ano completo: 12 meses considerados."
-                            },
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                        Text(
-                            "Limite do primeiro ano: ${money(mei.firstYearLimitCents)}",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                        Text(
-                            "Limite anual após o primeiro ano: ${money(mei.annualLimitCents)}",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                        Text(
-                            "A partir de ${config.openingYear + 1}, o app usa automaticamente o limite anual completo.",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-
-                        HorizontalDivider()
-
-                        OutlinedTextField(
-                            value = annualLimit,
-                            onValueChange = { annualLimit = it },
-                            label = { Text("Teto anual MEI (R$)") },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        OutlinedTextField(
-                            value = taxYear,
-                            onValueChange = { taxYear = it.filter(Char::isDigit).take(4) },
-                            label = { Text("Ano fiscal") },
-                            supportingText = {
-                                Text("Somente receitas desse ano entram no limite exibido.")
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        OutlinedTextField(
-                            value = openingDate,
-                            onValueChange = { openingDate = it.take(10) },
-                            label = { Text("Data de abertura (dd/mm/aaaa)") },
-                            supportingText = {
-                                Text(
-                                    "O primeiro ano é calculado proporcionalmente. Nos anos seguintes, o limite anual completo é aplicado automaticamente."
-                                )
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Button(
-                            onClick = {
-                                viewModel.updateMeiConfig(
-                                    annualLimit = annualLimit,
-                                    openingDate = openingDate,
-                                    taxYear = taxYear,
-                                    onError = { error = it }
-                                )
-                            },
-                            modifier = Modifier.fillMaxWidth()
+                if (activeCompany?.companyType == CompanyType.MEI) {
+                    Card(Modifier.fillMaxWidth()) {
+                        Column(
+                            Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            Text("Salvar configuração do MEI")
+                            Text(
+                                "Limite do MEI • ${config.taxYear}",
+                                style = MaterialTheme.typography.titleLarge
+                            )
+                            Text("${money(mei.revenueCents)} de ${money(mei.limitCents)}")
+                            LinearProgressIndicator(
+                                progress = mei.usage.coerceIn(0f, 1f),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Text(
+                                if (mei.excessCents > 0) {
+                                    "Acima do limite em ${money(mei.excessCents)}"
+                                } else {
+                                    "Restante: ${money(mei.remainingCents)}"
+                                }
+                            )
+                            Text(
+                                if (mei.isFirstYear) {
+                                    "Primeiro ano: ${mei.activeMonths} mês(es) considerados desde a abertura."
+                                } else {
+                                    "Ano completo: 12 meses considerados."
+                                },
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            Text(
+                                "Limite do primeiro ano: ${money(mei.firstYearLimitCents)}",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            Text(
+                                "Limite anual após o primeiro ano: ${money(mei.annualLimitCents)}",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            Text(
+                                "A partir de ${config.openingYear + 1}, o app usa automaticamente o limite anual completo.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+
+                            HorizontalDivider()
+
+                            OutlinedTextField(
+                                value = annualLimit,
+                                onValueChange = { annualLimit = it },
+                                label = { Text("Teto anual MEI (R$)") },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            OutlinedTextField(
+                                value = taxYear,
+                                onValueChange = {
+                                    taxYear = it.filter(Char::isDigit).take(4)
+                                },
+                                label = { Text("Ano fiscal") },
+                                supportingText = {
+                                    Text(
+                                        "Somente receitas desse ano entram no limite exibido."
+                                    )
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            OutlinedTextField(
+                                value = openingDate,
+                                onValueChange = { openingDate = it.take(10) },
+                                label = {
+                                    Text("Data de abertura (dd/mm/aaaa)")
+                                },
+                                supportingText = {
+                                    Text(
+                                        "O primeiro ano é calculado proporcionalmente. Nos anos seguintes, o limite anual completo é aplicado automaticamente."
+                                    )
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Button(
+                                onClick = {
+                                    viewModel.updateMeiConfig(
+                                        annualLimit = annualLimit,
+                                        openingDate = openingDate,
+                                        taxYear = taxYear,
+                                        onError = { error = it }
+                                    )
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Salvar configuração do MEI")
+                            }
+                        }
+                    }
+                } else {
+                    Card(Modifier.fillMaxWidth()) {
+                        Column(
+                            Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                "Enquadramento da empresa",
+                                style = MaterialTheme.typography.titleLarge
+                            )
+                            Text(
+                                companyTypeLabel(
+                                    activeCompany?.companyType ?: CompanyType.OTHER
+                                ),
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                "O controle de teto anual específico do MEI fica desativado para este enquadramento. O fechamento mensal, contas, estoque e fluxo financeiro continuam funcionando normalmente.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
                         }
                     }
                 }
@@ -1058,6 +1100,14 @@ private fun monthYearLabel(year: Int, month: Int): String {
     )
     return "${names[month.coerceIn(1, 12) - 1]} / $year"
 }
+
+private fun companyTypeLabel(type: CompanyType): String =
+    when (type) {
+        CompanyType.MEI -> "MEI — Microempreendedor Individual"
+        CompanyType.ME -> "ME — Microempresa"
+        CompanyType.EPP -> "EPP — Empresa de Pequeno Porte"
+        CompanyType.OTHER -> "Outro enquadramento"
+    }
 
 private fun paymentMethodLabel(method: PaymentMethod): String =
     when (method) {

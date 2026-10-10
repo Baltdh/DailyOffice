@@ -2,7 +2,7 @@
 
 Aplicativo Android local-first para fotografar e arquivar comprovantes, extrair dados por OCR e organizar finanças pessoais e empresariais, com suporte a múltiplos CNPJs e diferentes enquadramentos.
 
-## Estado atual — v0.12.0
+## Estado atual — v0.13.0
 
 O DailyOffice já possui:
 
@@ -25,7 +25,10 @@ O DailyOffice já possui:
 - acompanhamento configurável do limite MEI por ano fiscal;
 - faturamento do MEI limitado ao ano selecionado;
 - múltiplas empresas/CNPJs no mesmo aplicativo;
-- seleção de porte/enquadramento por empresa: MEI, ME, EPP ou Outro;
+- seleção de tipo/porte por empresa: MEI, ME, EPP ou Outro;
+- regime tributário separado do porte: SIMEI, Simples Nacional, Lucro Presumido, Lucro Real ou Outro;
+- MEI é normalizado automaticamente para SIMEI;
+- ME/EPP não podem permanecer marcadas como SIMEI;
 - regras e painel de limite MEI exibidos somente para empresas cadastradas como MEI;
 - troca da empresa ativa com finanças, comprovantes e configuração MEI isolados;
 - estoque físico compartilhado com saldo de propriedade separado por empresa;
@@ -53,7 +56,7 @@ O DailyOffice já possui:
 - fechamento mostra faturamento bruto, despesas empresariais pagas e pendentes, despesas pessoais, aportes, retiradas, reembolsos, transferências e valores a receber;
 - lucro estimado mensal sem somar aportes, reembolsos ou transferências internas;
 - resumo mensal de estoque com compras, custo vinculado, consumo, perdas, ajustes e transferências;
-- exportação dos dados da empresa ativa em CSV, incluindo nome, CNPJ e enquadramento;
+- exportação dos dados da empresa ativa em CSV, incluindo nome, CNPJ, tipo da empresa e regime tributário;
 - migrações do banco preservando os dados de versões anteriores.
 
 ## Fluxo de comprovantes
@@ -78,6 +81,7 @@ O DailyOffice já possui:
 - Retirada não é despesa operacional.
 - O faturamento usado no limite MEI vem de lançamentos de Receita do ano fiscal selecionado.
 - O controle de teto do MEI só é aplicado às empresas marcadas como MEI; ME/EPP continuam com financeiro e fechamento mensal sem teto MEI.
+- Porte/tipo da empresa e regime tributário são campos distintos e não devem ser tratados como sinônimos.
 - Dados de empresas diferentes não devem ser somados automaticamente.
 - Transferência de estoque no app é controle interno e não substitui documentação fiscal eventualmente exigida entre CNPJs.
 

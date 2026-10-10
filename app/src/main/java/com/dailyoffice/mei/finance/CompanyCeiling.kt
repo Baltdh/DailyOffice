@@ -10,7 +10,7 @@ object CompanyCeiling {
 
     fun annualLimit(type: CompanyType, meiConfiguredLimit: Long = MEI_CENTS): Long =
         when (type) {
-            CompanyType.MEI -> meiConfiguredLimit.coerceAtLeast(0)
+            CompanyType.MEI -> MEI_CENTS
             CompanyType.ME -> ME_CENTS
             CompanyType.EPP -> EPP_CENTS
             CompanyType.OTHER -> 0L

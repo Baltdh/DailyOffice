@@ -127,6 +127,10 @@ fun FinanceScreen(
                     companyTypeLabel(activeCompany?.companyType ?: CompanyType.OTHER),
                     style = MaterialTheme.typography.bodySmall
                 )
+                Text(
+                    taxRegimeLabel(activeCompany?.taxRegime ?: TaxRegime.OTHER),
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
             item {
                 Row(
@@ -529,6 +533,12 @@ fun FinanceScreen(
                                     activeCompany?.companyType ?: CompanyType.OTHER
                                 ),
                                 style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                "Regime: " + taxRegimeLabel(
+                                    activeCompany?.taxRegime ?: TaxRegime.OTHER
+                                ),
+                                style = MaterialTheme.typography.bodyMedium
                             )
                             Text(
                                 "O controle de teto anual específico do MEI fica desativado para este enquadramento. O fechamento mensal, contas, estoque e fluxo financeiro continuam funcionando normalmente.",
@@ -1107,6 +1117,15 @@ private fun companyTypeLabel(type: CompanyType): String =
         CompanyType.ME -> "ME — Microempresa"
         CompanyType.EPP -> "EPP — Empresa de Pequeno Porte"
         CompanyType.OTHER -> "Outro enquadramento"
+    }
+
+private fun taxRegimeLabel(regime: TaxRegime): String =
+    when (regime) {
+        TaxRegime.SIMEI -> "SIMEI — MEI"
+        TaxRegime.SIMPLES_NACIONAL -> "Simples Nacional"
+        TaxRegime.LUCRO_PRESUMIDO -> "Lucro Presumido"
+        TaxRegime.LUCRO_REAL -> "Lucro Real"
+        TaxRegime.OTHER -> "Outro / não informado"
     }
 
 private fun paymentMethodLabel(method: PaymentMethod): String =

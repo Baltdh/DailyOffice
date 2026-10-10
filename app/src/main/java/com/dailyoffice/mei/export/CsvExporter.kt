@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import androidx.core.content.FileProvider
 import com.dailyoffice.mei.data.Account
+import com.dailyoffice.mei.data.Company
 import com.dailyoffice.mei.data.Receipt
 import com.dailyoffice.mei.data.Transaction
 import java.io.File
@@ -17,6 +18,7 @@ object CsvExporter {
 
     fun export(
         context: Context,
+        company: Company?,
         receipts: List<Receipt>,
         transactions: List<Transaction>,
         accounts: List<Account>
@@ -27,11 +29,14 @@ object CsvExporter {
         val accountById = accounts.associateBy { it.id }
 
         file.bufferedWriter().use { out ->
-            out.appendLine("TIPO;ID;DATA;DESCRICAO;VALOR;CLASSIFICACAO;PAGAMENTO;STATUS;CONTA_ORIGEM;CONTA_DESTINO;DOCUMENTO;CATEGORIA;COMPROVANTE_ID;ENTRA_NO_FLUXO")
+            out.appendLine("EMPRESA;CNPJ;ENQUADRAMENTO;TIPO;ID;DATA;DESCRICAO;VALOR;CLASSIFICACAO;PAGAMENTO;STATUS;CONTA_ORIGEM;CONTA_DESTINO;DOCUMENTO;CATEGORIA;COMPROVANTE_ID;ENTRA_NO_FLUXO")
 
             receipts.forEach { receipt ->
                 out.appendLine(
                     listOf(
+                        company?.name.orEmpty(),
+                        company?.cnpj.orEmpty(),
+                        company?.companyType?.name.orEmpty(),
                         "COMPROVANTE",
                         receipt.id.toString(),
                         date(receipt.issuedAt ?: receipt.createdAt),
@@ -53,6 +58,9 @@ object CsvExporter {
             transactions.forEach { tx ->
                 out.appendLine(
                     listOf(
+                        company?.name.orEmpty(),
+                        company?.cnpj.orEmpty(),
+                        company?.companyType?.name.orEmpty(),
                         tx.kind.name,
                         tx.id.toString(),
                         date(tx.createdAt),

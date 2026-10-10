@@ -1280,6 +1280,7 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
         name: String,
         cnpj: String,
         ownerName: String,
+        companyType: CompanyType,
         onSaved: () -> Unit = {},
         onError: (String) -> Unit = {}
     ) {
@@ -1301,7 +1302,8 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
                     Company(
                         name = cleanName,
                         cnpj = cleanCnpj,
-                        ownerName = ownerName.trim()
+                        ownerName = ownerName.trim(),
+                        companyType = companyType
                     )
                 )
                 seedDefaultAccounts(id)
@@ -1365,6 +1367,7 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
         name: String,
         cnpj: String,
         ownerName: String,
+        companyType: CompanyType,
         onSaved: () -> Unit = {},
         onError: (String) -> Unit = {}
     ) {
@@ -1386,7 +1389,8 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
                     company.copy(
                         name = cleanName,
                         cnpj = cleanCnpj,
-                        ownerName = ownerName.trim()
+                        ownerName = ownerName.trim(),
+                        companyType = companyType
                     )
                 )
             }.onSuccess {

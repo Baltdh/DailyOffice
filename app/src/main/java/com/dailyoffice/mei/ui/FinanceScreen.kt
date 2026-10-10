@@ -470,12 +470,15 @@ fun FinanceScreen(
                                 style = MaterialTheme.typography.bodySmall
                             )
 
+                            if (activeCompany?.companyType == CompanyType.MEI) {
+                                Text("Teto legal MEI comum: R$ 81.000/ano. A edição manual do teto fica desativada para evitar valores incompatíveis com 2026.", style = MaterialTheme.typography.bodySmall)
+                            }
                             if (activeCompany?.companyType == CompanyType.EPP) {
                                 Text("Faixa EPP: receita acima de R$ 360.000 até R$ 4.800.000 por ano. O teto não é imposto a pagar.", style = MaterialTheme.typography.bodySmall)
                             }
                             HorizontalDivider()
 
-                            if (activeCompany?.companyType == CompanyType.MEI) OutlinedTextField(
+                            if (false) OutlinedTextField(
                                 value = annualLimit,
                                 onValueChange = { annualLimit = it },
                                 label = { Text("Teto anual MEI (R$)") },

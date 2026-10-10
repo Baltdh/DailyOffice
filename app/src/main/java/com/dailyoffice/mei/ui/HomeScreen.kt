@@ -17,6 +17,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dailyoffice.mei.data.Company
+import com.dailyoffice.mei.data.CompanyType
 import com.dailyoffice.mei.data.Ownership
 import com.dailyoffice.mei.data.PaymentStatus
 import com.dailyoffice.mei.data.Receipt
@@ -177,36 +178,54 @@ fun HomeScreen(
             }
 
             item {
-                Card(Modifier.fillMaxWidth()) {
-                    Column(
-                        Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Text(
-                            "Limite MEI • ${meiConfig.taxYear}",
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                        Text("${money(mei.revenueCents)} de ${money(mei.limitCents)}")
-                        LinearProgressIndicator(
-                            progress = mei.usage.coerceIn(0f, 1f),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Text(
-                            if (mei.excessCents > 0) {
-                                "Excesso: ${money(mei.excessCents)}"
-                            } else {
-                                "Restante: ${money(mei.remainingCents)}"
-                            },
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                        Text(
-                            if (mei.isFirstYear) {
-                                "Primeiro ano: limite proporcional. A partir de ${mei.openingYear + 1}: ${money(mei.annualLimitCents)} por ano."
-                            } else {
-                                "Limite anual completo: ${money(mei.annualLimitCents)}."
-                            },
-                            style = MaterialTheme.typography.bodySmall
-                        )
+                if (activeCompany?.companyType == CompanyType.MEI) {
+                    Card(Modifier.fillMaxWidth()) {
+                        Column(
+                            Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                "Limite MEI • ${meiConfig.taxYear}",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text("${money(mei.revenueCents)} de ${money(mei.limitCents)}")
+                            LinearProgressIndicator(
+                                progress = mei.usage.coerceIn(0f, 1f),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Text(
+                                if (mei.excessCents > 0) {
+                                    "Excesso: ${money(mei.excessCents)}"
+                                } else {
+                                    "Restante: ${money(mei.remainingCents)}"
+                                },
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            Text(
+                                if (mei.isFirstYear) {
+                                    "Primeiro ano: limite proporcional. A partir de ${mei.openingYear + 1}: ${money(mei.annualLimitCents)} por ano."
+                                } else {
+                                    "Limite anual completo: ${money(mei.annualLimitCents)}."
+                                },
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                } else {
+                    Card(Modifier.fillMaxWidth()) {
+                        Column(
+                            Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                "Enquadramento: ${companyTypeLabel(activeCompany?.companyType ?: CompanyType.OTHER)}",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                "O limite anual do MEI não é aplicado a esta empresa. O financeiro e o fechamento mensal continuam separados normalmente.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
                     }
                 }
             }
@@ -370,13 +389,14 @@ fun HomeScreen(
         CompanyFormDialog(
             company = companyFormTarget,
             onDismiss = { showCompanyForm = false },
-            onSave = { name, cnpj, owner ->
+            onSave = { name, cnpj, owner, companyType ->
                 val target = companyFormTarget
                 if (target == null) {
                     viewModel.createCompany(
                         name = name,
                         cnpj = cnpj,
                         ownerName = owner,
+                        companyType = companyType,
                         onSaved = {
                             showCompanyForm = false
                             message = "Empresa cadastrada e selecionada."
@@ -389,6 +409,7 @@ fun HomeScreen(
                         name = name,
                         cnpj = cnpj,
                         ownerName = owner,
+                        companyType = companyType,
                         onSaved = {
                             showCompanyForm = false
                             message = "Cadastro da empresa atualizado."
@@ -449,6 +470,12 @@ private fun CompanyCard(
                 company?.name ?: "Carregando...",
                 style = MaterialTheme.typography.titleLarge
             )
+            if (company != null) {
+                Text(
+                    companyTypeLabel(company.companyType),
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
             if (!company?.cnpj.isNullOrBlank()) {
                 Text(
                     "CNPJ ${formatCnpj(company!!.cnpj)}",
@@ -495,6 +522,10 @@ private fun CompanySelectorDialog(
                         label = {
                             Column {
                                 Text(company.name)
+                                Text(
+                                    companyTypeLabel(company.companyType),
+                                    style = MaterialTheme.typography.bodySmall
+                                )
                                 if (company.cnpj.isNotBlank()) {
                                     Text(
                                         formatCnpj(company.cnpj),
@@ -525,7 +556,12 @@ private fun CompanySelectorDialog(
 private fun CompanyFormDialog(
     company: Company?,
     onDismiss: () -> Unit,
-    onSave: (name: String, cnpj: String, owner: String) -> Unit
+    onSave: (
+        name: String,
+        cnpj: String,
+        owner: String,
+        companyType: CompanyType
+    ) -> Unit
 ) {
     var name by remember(company?.id) {
         mutableStateOf(company?.name.orEmpty())
@@ -535,6 +571,9 @@ private fun CompanyFormDialog(
     }
     var owner by remember(company?.id) {
         mutableStateOf(company?.ownerName.orEmpty())
+    }
+    var companyType by remember(company?.id) {
+        mutableStateOf(company?.companyType ?: CompanyType.MEI)
     }
 
     AlertDialog(
@@ -572,10 +611,31 @@ private fun CompanyFormDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                Text(
+                    "Porte / enquadramento",
+                    style = MaterialTheme.typography.labelLarge
+                )
+                Text(
+                    "ME e EPP representam o porte da empresa; esta seleção é usada pelo app para aplicar ou não as regras específicas de MEI.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    CompanyType.entries.forEach { candidate ->
+                        FilterChip(
+                            selected = companyType == candidate,
+                            onClick = { companyType = candidate },
+                            label = { Text(companyTypeLabel(candidate)) }
+                        )
+                    }
+                }
             }
         },
         confirmButton = {
-            Button(onClick = { onSave(name, cnpj, owner) }) {
+            Button(onClick = { onSave(name, cnpj, owner, companyType) }) {
                 Text("Salvar")
             }
         },
@@ -584,6 +644,14 @@ private fun CompanyFormDialog(
         }
     )
 }
+
+private fun companyTypeLabel(type: CompanyType): String =
+    when (type) {
+        CompanyType.MEI -> "MEI — Microempreendedor Individual"
+        CompanyType.ME -> "ME — Microempresa"
+        CompanyType.EPP -> "EPP — Empresa de Pequeno Porte"
+        CompanyType.OTHER -> "Outro enquadramento"
+    }
 
 @Composable
 private fun FilterChoice(

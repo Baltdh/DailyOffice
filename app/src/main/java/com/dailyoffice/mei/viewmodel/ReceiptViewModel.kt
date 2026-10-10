@@ -225,7 +225,7 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
         DashboardSummary()
     )
 
-    val meiProjection: StateFlow<MeiProjection> = combine(transactions, meiConfig) { txList, config ->
+    val meiProjection: StateFlow<MeiProjection> = combine(transactions, meiConfig, activeCompany) { txList, config, company ->
         val revenue = FinanceCalculator.revenueForYear(
             transactions = txList,
             year = config.taxYear
@@ -233,7 +233,7 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
 
         MeiCalculator.calculate(
             revenueCents = revenue,
-            annualLimitCents = config.annualLimitCents,
+            annualLimitCents = com.dailyoffice.mei.finance.CompanyCeiling.annualLimit(company?.companyType ?: CompanyType.MEI, config.annualLimitCents),
             openingMonth = config.openingMonth,
             openingYear = config.openingYear,
             taxYear = config.taxYear

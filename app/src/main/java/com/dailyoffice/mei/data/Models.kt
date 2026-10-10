@@ -10,6 +10,37 @@ enum class Ownership { BUSINESS, PERSONAL, MIXED, REVIEW }
 enum class PaymentStatus { PAID, PENDING, OVERDUE, CANCELLED }
 enum class PaymentMethod { CASH, PIX, DEBIT, CREDIT, DIGITAL_WALLET, OTHER }
 enum class CompanyType { MEI, ME, EPP, OTHER }
+enum class TaxRegime {
+    SIMEI,
+    SIMPLES_NACIONAL,
+    LUCRO_PRESUMIDO,
+    LUCRO_REAL,
+    OTHER
+}
+
+object CompanyProfileRules {
+    fun normalizedTaxRegime(
+        companyType: CompanyType,
+        taxRegime: TaxRegime
+    ): TaxRegime =
+        when {
+            companyType == CompanyType.MEI -> TaxRegime.SIMEI
+            taxRegime == TaxRegime.SIMEI -> TaxRegime.OTHER
+            else -> taxRegime
+        }
+
+    fun allowedTaxRegimes(companyType: CompanyType): List<TaxRegime> =
+        if (companyType == CompanyType.MEI) {
+            listOf(TaxRegime.SIMEI)
+        } else {
+            listOf(
+                TaxRegime.SIMPLES_NACIONAL,
+                TaxRegime.LUCRO_PRESUMIDO,
+                TaxRegime.LUCRO_REAL,
+                TaxRegime.OTHER
+            )
+        }
+}
 enum class EntryKind { EXPENSE, REVENUE, CONTRIBUTION, WITHDRAWAL, REIMBURSEMENT, TRANSFER }
 enum class AccountKind {
     BUSINESS_BANK,
@@ -42,6 +73,8 @@ data class Company(
     val ownerName: String = "",
     @ColumnInfo(defaultValue = "'MEI'")
     val companyType: CompanyType = CompanyType.MEI,
+    @ColumnInfo(defaultValue = "'SIMEI'")
+    val taxRegime: TaxRegime = TaxRegime.SIMEI,
     val active: Boolean = true,
     val createdAt: Long = System.currentTimeMillis()
 )
@@ -359,7 +392,7 @@ interface TransactionDao {
         ReceiptItem::class,
         Transaction::class
     ],
-    version = 10,
+    version = 11,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -602,6 +635,17 @@ abstract class DailyOfficeDb : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE companies ADD COLUMN taxRegime TEXT NOT NULL DEFAULT 'OTHER'"
+                )
+                db.execSQL(
+                    "UPDATE companies SET taxRegime = 'SIMEI' WHERE companyType = 'MEI'"
+                )
+            }
+        }
+
         fun get(context: Context): DailyOfficeDb =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -609,7 +653,7 @@ abstract class DailyOfficeDb : RoomDatabase() {
                     DailyOfficeDb::class.java,
                     "dailyoffice.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
                     .build()
                     .also { instance = it }
             }
@@ -622,6 +666,8 @@ class Converters {
     @TypeConverter fun paymentToString(value: PaymentMethod) = value.name
     @TypeConverter fun companyTypeToString(value: CompanyType) = value.name
     @TypeConverter fun stringToCompanyType(value: String) = CompanyType.valueOf(value)
+    @TypeConverter fun taxRegimeToString(value: TaxRegime) = value.name
+    @TypeConverter fun stringToTaxRegime(value: String) = TaxRegime.valueOf(value)
     @TypeConverter fun stringToPayment(value: String) = PaymentMethod.valueOf(value)
     @TypeConverter fun statusToString(value: PaymentStatus) = value.name
     @TypeConverter fun stringToStatus(value: String) = PaymentStatus.valueOf(value)

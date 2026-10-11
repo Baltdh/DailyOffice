@@ -32,8 +32,9 @@ object AccountingArchive {
                 }
             } ?: "documento"
         val safeName = originalName.substringAfterLast('/').substringAfterLast('\\').take(120)
+        require(safeName.isNotBlank() && safeName != "." && safeName != "..") { "Nome de arquivo inválido." }
         val extension = safeName.substringAfterLast('.', "").lowercase()
-        val mime = resolver.getType(uri)?.lowercase() ?: "application/octet-stream"
+        val mime = resolver.getType(uri)?.lowercase()?.substringBefore(";") ?: "application/octet-stream"
         require(extension in allowedExtensions && (mime in allowedMime || mime.startsWith("text/"))) {
             "Formato não suportado. Use PDF, XML, CSV, TXT ou OFX."
         }

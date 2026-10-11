@@ -29,6 +29,9 @@ fun DocumentsScreen(viewModel: ReceiptViewModel, onBack: () -> Unit) {
     var importing by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var pendingDelete by remember { mutableStateOf<AccountingDocument?>(null) }
+    var editingDocument by remember { mutableStateOf<AccountingDocument?>(null) }
+    var editedNotes by remember { mutableStateOf("") }
+    var search by remember { mutableStateOf("") }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -83,11 +86,34 @@ fun DocumentsScreen(viewModel: ReceiptViewModel, onBack: () -> Unit) {
                     TextButton(onClick = { message = null }) { Text("Fechar") }
                 }
             }
-            items(documents, key = { it.id }) { doc ->
+            item {
+                OutlinedTextField(
+                    value = search,
+                    onValueChange = { search = it },
+                    label = { Text("Buscar arquivos e observações") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                Text("${documents.size} documento(s) arquivado(s)")
+            }
+            items(
+                documents.filter {
+                    it.displayName.contains(search, ignoreCase = true) ||
+                        it.notes.contains(search, ignoreCase = true)
+                },
+                key = { it.id }
+            ) { doc ->
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(doc.displayName, style = MaterialTheme.typography.titleSmall)
                         Text(documentTypeLabel(doc.type))
+                        if (doc.notes.isNotBlank()) {
+                            Text(doc.notes, style = MaterialTheme.typography.bodySmall)
+                        }
+                        TextButton(onClick = {
+                            editingDocument = doc
+                            editedNotes = doc.notes
+                        }) { Text("Editar observações") }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedButton(onClick = {
                                 runCatching {
@@ -121,6 +147,34 @@ fun DocumentsScreen(viewModel: ReceiptViewModel, onBack: () -> Unit) {
                 }
             }
         }
+    }
+    editingDocument?.let { doc ->
+        AlertDialog(
+            onDismissRequest = { editingDocument = null },
+            title = { Text("Observações do documento") },
+            text = {
+                OutlinedTextField(
+                    value = editedNotes,
+                    onValueChange = { editedNotes = it.take(1000) },
+                    label = { Text("Descrição, referência ou vencimento") },
+                    minLines = 3,
+                    maxLines = 6
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.updateAccountingDocumentNotes(
+                        doc, editedNotes,
+                        onSaved = { message = "Observações atualizadas." },
+                        onError = { message = it }
+                    )
+                    editingDocument = null
+                }) { Text("Salvar") }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingDocument = null }) { Text("Cancelar") }
+            }
+        )
     }
     pendingDelete?.let { doc ->
         AlertDialog(

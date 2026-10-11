@@ -260,6 +260,9 @@ interface AccountingDocumentDao {
     @Query("SELECT * FROM accounting_documents WHERE companyId = :companyId ORDER BY createdAt DESC")
     fun observeByCompany(companyId: Long): Flow<List<AccountingDocument>>
 
+    @Query("UPDATE accounting_documents SET notes = :notes WHERE id = :id AND companyId = :companyId")
+    suspend fun updateNotes(id: Long, companyId: Long, notes: String)
+
     @Query("SELECT * FROM accounting_documents WHERE id = :id AND companyId = :companyId LIMIT 1")
     suspend fun byId(id: Long, companyId: Long): AccountingDocument?
 

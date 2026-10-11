@@ -108,7 +108,10 @@ fun HomeScreen(
             )
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(onClick = onCapture) {
+            ExtendedFloatingActionButton(
+                onClick = onCapture,
+                modifier = Modifier.navigationBarsPadding().imePadding()
+            ) {
                 Text("Fotografar")
             }
         }
@@ -331,7 +334,7 @@ fun HomeScreen(
 
             item {
                 Text(
-                    "Comprovantes arquivados (${filteredReceipts.size})",
+                    "Comprovantes (${filteredReceipts.size} de ${receipts.size})",
                     style = MaterialTheme.typography.titleLarge
                 )
             }
@@ -341,9 +344,9 @@ fun HomeScreen(
                     Card {
                         Text(
                             if (receipts.isEmpty()) {
-                                "Nenhum comprovante salvo ainda. Fotografe ou importe o primeiro."
+                                "Nenhum comprovante arquivado. Use Fotografar ou Galeria para adicionar o primeiro."
                             } else {
-                                "Nenhum comprovante corresponde aos filtros."
+                                "Nenhum resultado. Limpe a busca ou selecione Todos para visualizar os comprovantes."
                             },
                             modifier = Modifier.padding(16.dp)
                         )

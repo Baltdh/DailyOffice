@@ -23,6 +23,7 @@ import com.dailyoffice.mei.data.TaxRegime
 import com.dailyoffice.mei.data.Ownership
 import com.dailyoffice.mei.data.PaymentStatus
 import com.dailyoffice.mei.data.Receipt
+import com.dailyoffice.mei.finance.CompanyCeiling
 import com.dailyoffice.mei.receipt.ReceiptArchive
 import com.dailyoffice.mei.viewmodel.ReceiptViewModel
 import java.text.NumberFormat
@@ -234,10 +235,23 @@ fun HomeScreen(
                                 "Enquadramento: ${companyTypeLabel(activeCompany?.companyType ?: CompanyType.OTHER)}",
                                 style = MaterialTheme.typography.titleMedium
                             )
-                            Text(
-                                "O limite anual do MEI não é aplicado a esta empresa. O financeiro e o fechamento mensal continuam separados normalmente.",
-                                style = MaterialTheme.typography.bodySmall
-                            )
+                            val ceiling = CompanyCeiling.annualLimit(activeCompany?.companyType ?: CompanyType.OTHER)
+                            if (ceiling > 0L) {
+                                val used = mei.revenueCents
+                                Text("Teto anual de porte: ${money(ceiling)}")
+                                Text("Receita registrada (${meiConfig.taxYear}): ${money(used)}")
+                                LinearProgressIndicator(
+                                    progress = (used.toDouble() / ceiling.toDouble()).toFloat().coerceIn(0f, 1f),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Text(
+                                    if (used > ceiling) "Acima do teto: ${money(used - ceiling)}"
+                                    else "Margem até o teto: ${money(ceiling - used)}",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            } else {
+                                Text("Porte sem teto automático cadastrado.", style = MaterialTheme.typography.bodySmall)
+                            }
                         }
                     }
                 }
@@ -648,7 +662,7 @@ private fun CompanyFormDialog(
                     style = MaterialTheme.typography.labelLarge
                 )
                 Text(
-                    "ME e EPP representam o porte da empresa; esta seleção é usada pelo app para aplicar ou não as regras específicas de MEI.",
+                    "ME e EPP representam o porte. LTDA é natureza jurídica e pode ser ME ou EPP, não um porte separado.",
                     style = MaterialTheme.typography.bodySmall
                 )
                 Row(

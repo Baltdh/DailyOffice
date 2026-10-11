@@ -231,6 +231,39 @@ data class Transaction(
     val createdAt: Long = System.currentTimeMillis()
 )
 
+
+enum class AccountingDocumentType { BOLETO, NOTA_FISCAL, EXTRATO, GUIA_TRIBUTO, CONTRATO, OUTRO }
+
+@Entity(
+    tableName = "accounting_documents",
+    indices = [Index("companyId"), Index("createdAt"), Index("sha256")]
+)
+data class AccountingDocument(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val companyId: Long,
+    val type: AccountingDocumentType,
+    val displayName: String,
+    val mimeType: String,
+    val localPath: String,
+    val sha256: String,
+    val notes: String = "",
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+@Dao
+interface AccountingDocumentDao {
+    @Insert suspend fun insert(document: AccountingDocument): Long
+
+    @Query("SELECT * FROM accounting_documents WHERE companyId = :companyId ORDER BY createdAt DESC")
+    fun observeByCompany(companyId: Long): Flow<List<AccountingDocument>>
+
+    @Query("SELECT * FROM accounting_documents WHERE id = :id AND companyId = :companyId LIMIT 1")
+    suspend fun byId(id: Long, companyId: Long): AccountingDocument?
+
+    @Query("DELETE FROM accounting_documents WHERE id = :id AND companyId = :companyId")
+    suspend fun delete(id: Long, companyId: Long)
+}
+
 @Dao
 interface CompanyDao {
     @Insert
@@ -390,13 +423,15 @@ interface TransactionDao {
         StockMovement::class,
         Receipt::class,
         ReceiptItem::class,
-        Transaction::class
+        Transaction::class,
+        AccountingDocument::class
     ],
-    version = 11,
+    version = 12,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
 abstract class DailyOfficeDb : RoomDatabase() {
+    abstract fun accountingDocumentDao(): AccountingDocumentDao
     abstract fun companyDao(): CompanyDao
     abstract fun accountDao(): AccountDao
     abstract fun inventoryProductDao(): InventoryProductDao
@@ -646,6 +681,27 @@ abstract class DailyOfficeDb : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS accounting_documents (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        companyId INTEGER NOT NULL,
+                        type TEXT NOT NULL,
+                        displayName TEXT NOT NULL,
+                        mimeType TEXT NOT NULL,
+                        localPath TEXT NOT NULL,
+                        sha256 TEXT NOT NULL,
+                        notes TEXT NOT NULL,
+                        createdAt INTEGER NOT NULL
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_accounting_documents_companyId ON accounting_documents(companyId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_accounting_documents_createdAt ON accounting_documents(createdAt)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_accounting_documents_sha256 ON accounting_documents(sha256)")
+            }
+        }
+
         fun get(context: Context): DailyOfficeDb =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -653,7 +709,7 @@ abstract class DailyOfficeDb : RoomDatabase() {
                     DailyOfficeDb::class.java,
                     "dailyoffice.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
                     .build()
                     .also { instance = it }
             }
@@ -661,6 +717,8 @@ abstract class DailyOfficeDb : RoomDatabase() {
 }
 
 class Converters {
+    @TypeConverter fun documentTypeToString(value: AccountingDocumentType) = value.name
+    @TypeConverter fun stringToDocumentType(value: String) = AccountingDocumentType.valueOf(value)
     @TypeConverter fun ownershipToString(value: Ownership) = value.name
     @TypeConverter fun stringToOwnership(value: String) = Ownership.valueOf(value)
     @TypeConverter fun paymentToString(value: PaymentMethod) = value.name

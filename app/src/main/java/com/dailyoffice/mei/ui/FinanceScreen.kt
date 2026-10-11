@@ -44,6 +44,7 @@ fun FinanceScreen(
     val accountFlows by viewModel.accountFlows.collectAsStateWithLifecycle()
     val stockMovements by viewModel.stockMovements.collectAsStateWithLifecycle()
 
+    var settling by remember { mutableStateOf<Transaction?>(null) }
     var addingKind by remember { mutableStateOf<EntryKind?>(null) }
     var showAccountDialog by remember { mutableStateOf(false) }
     var transferMode by remember { mutableStateOf<TransferDialogMode?>(null) }
@@ -564,7 +565,9 @@ fun FinanceScreen(
                 Text("Lançamentos recentes", style = MaterialTheme.typography.titleLarge)
             }
 
-            val recent = transactions.take(30)
+            val recent = (transactions.filter {
+                it.paymentStatus == PaymentStatus.PENDING || it.paymentStatus == PaymentStatus.OVERDUE
+            } + transactions.take(30)).distinctBy { it.id }
             if (recent.isEmpty()) {
                 item {
                     Card {
@@ -582,6 +585,7 @@ fun FinanceScreen(
                         counterpartyAccountName = accounts.firstOrNull {
                             it.id == tx.counterpartyAccountId
                         }?.name,
+                        onSettle = { error = null; settling = tx },
                         onDelete = if (tx.receiptId == null) {
                             {
                                 viewModel.deleteManualEntry(
@@ -596,6 +600,22 @@ fun FinanceScreen(
 
             item { Spacer(Modifier.height(24.dp)) }
         }
+    }
+
+    LaunchedEffect(activeCompany?.id) { settling = null }
+
+    settling?.let { transaction ->
+        SettleEntryDialog(
+            transaction = transaction,
+            accounts = accounts,
+            error = error,
+            onDismiss = { settling = null },
+            onSave = { accountId, date ->
+                viewModel.settleEntry(transaction.id, accountId, date,
+                    onSaved = { settling = null; error = null },
+                    onError = { error = it })
+            }
+        )
     }
 
     addingKind?.let { kind ->
@@ -682,7 +702,8 @@ private fun TransactionCard(
     transaction: Transaction,
     accountName: String?,
     counterpartyAccountName: String?,
-    onDelete: (() -> Unit)?
+    onDelete: (() -> Unit)?,
+    onSettle: () -> Unit
 ) {
     val kind = when (transaction.kind) {
         EntryKind.EXPENSE -> "Despesa"
@@ -721,11 +742,62 @@ private fun TransactionCard(
                     color = MaterialTheme.colorScheme.error
                 )
             }
+            if (transaction.paymentStatus == PaymentStatus.PENDING ||
+                transaction.paymentStatus == PaymentStatus.OVERDUE) {
+                transaction.dueAt?.let {
+                    Text("Vencimento: ${formatDate(it)}", style = MaterialTheme.typography.bodySmall)
+                }
+                TextButton(onClick = onSettle) {
+                    Text(if (transaction.kind == EntryKind.REVENUE) "Registrar recebimento" else "Registrar pagamento")
+                }
+            }
             onDelete?.let {
                 TextButton(onClick = it) { Text("Excluir lançamento") }
             }
         }
     }
+}
+
+@Composable
+private fun SettleEntryDialog(
+    transaction: Transaction,
+    accounts: List<Account>,
+    error: String?,
+    onDismiss: () -> Unit,
+    onSave: (Long?, String) -> Unit
+) {
+    var accountId by remember(transaction.id) { mutableStateOf(transaction.accountId) }
+    var date by rememberSaveable(transaction.id) {
+        mutableStateOf(java.time.LocalDate.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy")))
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Registrar baixa") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(transaction.description)
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                Text(money(transaction.amountCents))
+                if (transaction.receiptId != null) {
+                    Text("A baixa quita todas as parcelas deste comprovante, incluindo a parte pessoal de compras mistas.")
+                }
+                Text("Conta do pagamento ou recebimento")
+                accounts.forEach { account ->
+                    FilterChip(selected = accountId == account.id,
+                        onClick = { accountId = account.id },
+                        label = { Text(account.name) })
+                }
+                OutlinedTextField(value = date, onValueChange = { date = it },
+                    label = { Text("Data (dd/mm/aaaa)") })
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = accountId != null && date.isNotBlank(), onClick = {
+                onSave(accountId, date)
+            }) { Text("Confirmar baixa") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } }
+    )
 }
 
 @Composable

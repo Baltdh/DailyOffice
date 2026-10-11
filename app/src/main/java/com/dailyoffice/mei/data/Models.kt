@@ -402,6 +402,12 @@ interface ReceiptItemDao {
 
 @Dao
 interface TransactionDao {
+    @Query("SELECT * FROM transactions WHERE id = :id AND companyId = :companyId LIMIT 1")
+    suspend fun byId(id: Long, companyId: Long): Transaction?
+
+    @Query("SELECT * FROM transactions WHERE receiptId = :receiptId AND companyId = :companyId")
+    suspend fun byReceiptId(receiptId: Long, companyId: Long): List<Transaction>
+
     @Insert
     suspend fun insert(transaction: Transaction): Long
 

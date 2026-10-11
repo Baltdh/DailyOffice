@@ -1077,6 +1077,69 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun settleEntry(
+        transactionId: Long,
+        accountId: Long?,
+        date: String,
+        onSaved: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        val companyId = _activeCompanyId.value
+        if (accountId == null) return onError("Selecione a conta do pagamento ou recebimento.")
+        val paidAt = runCatching {
+            LocalDate.parse(date.trim(), DateTimeFormatter.ofPattern("d/M/uuuu")
+                .withResolverStyle(java.time.format.ResolverStyle.STRICT))
+                .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        }.getOrNull() ?: return onError("Informe uma data válida no formato dd/mm/aaaa.")
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                db.withTransaction {
+                    val account = accountDao.byId(accountId)
+                    require(account != null && account.active && account.companyId == companyId) {
+                        "A conta precisa pertencer à empresa selecionada."
+                    }
+                    val transaction = transactionDao.byId(transactionId, companyId)
+                        ?: error("Lançamento não encontrado nesta empresa.")
+                    require(transaction.paymentStatus == PaymentStatus.PENDING ||
+                        transaction.paymentStatus == PaymentStatus.OVERDUE) {
+                        "Este lançamento já foi baixado ou cancelado."
+                    }
+                    val linkedId = transaction.receiptId
+                    val entries = if (linkedId == null) listOf(transaction) else {
+                        val receipt = receiptDao.byId(linkedId)
+                            ?: error("Comprovante não encontrado.")
+                        require(receipt.companyId == companyId) { "Comprovante de outra empresa." }
+                        require(receipt.paymentStatus == PaymentStatus.PENDING ||
+                            receipt.paymentStatus == PaymentStatus.OVERDUE) {
+                            "O comprovante já foi baixado ou cancelado."
+                        }
+                        receiptDao.update(receipt.copy(
+                            paymentStatus = PaymentStatus.PAID, accountId = accountId
+                        ))
+                        transactionDao.byReceiptId(linkedId, companyId)
+                    }
+                    entries.forEach { entry ->
+                        require(entry.paymentStatus == PaymentStatus.PENDING ||
+                            entry.paymentStatus == PaymentStatus.OVERDUE) {
+                            "Há uma parcela já baixada neste comprovante."
+                        }
+                        transactionDao.update(entry.copy(
+                            paymentStatus = PaymentStatus.PAID,
+                            accountId = accountId,
+                            paidAt = paidAt
+                        ))
+                    }
+                }
+            }.onSuccess {
+                withContext(Dispatchers.Main) { onSaved() }
+            }.onFailure {
+                withContext(Dispatchers.Main) {
+                    onError(it.message ?: "Não foi possível registrar a baixa.")
+                }
+            }
+        }
+    }
+
     fun deleteManualEntry(
         transaction: Transaction,
         onError: (String) -> Unit = {}

@@ -9,6 +9,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.room.withTransaction
 import com.dailyoffice.mei.data.*
+import com.dailyoffice.mei.document.AccountingArchive
 import com.dailyoffice.mei.export.CsvExporter
 import com.dailyoffice.mei.finance.AccountFlow
 import com.dailyoffice.mei.finance.FinanceCalculator
@@ -86,6 +87,7 @@ data class DashboardSummary(
 
 class ReceiptViewModel(application: Application) : AndroidViewModel(application) {
     private val db = DailyOfficeDb.get(application)
+    private val accountingDocumentDao = db.accountingDocumentDao()
     private val companyDao = db.companyDao()
     private val accountDao = db.accountDao()
     private val inventoryProductDao = db.inventoryProductDao()
@@ -117,6 +119,49 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
         SharingStarted.WhileSubscribed(5_000),
         null
     )
+
+    val accountingDocuments: StateFlow<List<AccountingDocument>> = _activeCompanyId
+        .flatMapLatest { accountingDocumentDao.observeByCompany(it) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun importAccountingDocument(
+        uri: Uri,
+        type: AccountingDocumentType,
+        onSaved: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        val companyId = _activeCompanyId.value
+        viewModelScope.launch(Dispatchers.IO) {
+            var archived: AccountingDocument? = null
+            try {
+                archived = AccountingArchive.import(getApplication(), uri, companyId, type)
+                accountingDocumentDao.insert(archived)
+                withContext(Dispatchers.Main) { onSaved() }
+            } catch (e: Exception) {
+                archived?.let { java.io.File(it.localPath).delete() }
+                withContext(Dispatchers.Main) { onError(e.message ?: "Falha ao importar documento.") }
+            }
+        }
+    }
+
+    fun deleteAccountingDocument(
+        document: AccountingDocument,
+        onDone: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        val companyId = _activeCompanyId.value
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val stored = accountingDocumentDao.byId(document.id, companyId)
+                    ?: error("Documento não pertence à empresa ativa.")
+                accountingDocumentDao.delete(stored.id, companyId)
+                java.io.File(stored.localPath).delete()
+                withContext(Dispatchers.Main) { onDone() }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { onError(e.message ?: "Falha ao excluir.") }
+            }
+        }
+    }
 
     val accounts: StateFlow<List<Account>> = _activeCompanyId
         .flatMapLatest { companyId ->

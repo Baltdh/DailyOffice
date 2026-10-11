@@ -127,8 +127,7 @@ fun HomeScreen(
             item {
                 Text("Acesso rápido", style = MaterialTheme.typography.titleMedium)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = onCapture, modifier = Modifier.weight(1f)) { Text("Fotografar") }
-                    OutlinedButton(onClick = { gallery.launch("image/*") }, modifier = Modifier.weight(1f)) { Text("Galeria") }
+                    OutlinedButton(onClick = { gallery.launch("image/*") }, modifier = Modifier.fillMaxWidth()) { Text("Importar da galeria") }
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = onFinance, modifier = Modifier.weight(1f)) { Text("Financeiro") }

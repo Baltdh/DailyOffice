@@ -125,6 +125,19 @@ fun HomeScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
+                Text("Acesso rápido", style = MaterialTheme.typography.titleMedium)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = onCapture, modifier = Modifier.weight(1f)) { Text("Fotografar") }
+                    OutlinedButton(onClick = { gallery.launch("image/*") }, modifier = Modifier.weight(1f)) { Text("Galeria") }
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = onFinance, modifier = Modifier.weight(1f)) { Text("Financeiro") }
+                    OutlinedButton(onClick = onDocuments, modifier = Modifier.weight(1f)) { Text("Arquivos") }
+                    OutlinedButton(onClick = onInventory, modifier = Modifier.weight(1f)) { Text("Estoque") }
+                }
+            }
+
+            item {
                 Text("Visão geral", style = MaterialTheme.typography.headlineSmall)
             }
 

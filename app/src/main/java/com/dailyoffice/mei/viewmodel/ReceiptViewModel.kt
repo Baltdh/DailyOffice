@@ -1106,14 +1106,14 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
                     }
                     val linkedId = transaction.receiptId
                     val entries = if (linkedId == null) listOf(transaction) else {
-                        val receipt = receiptDao.byId(linkedId)
+                        val receipt = dao.byId(linkedId)
                             ?: error("Comprovante não encontrado.")
                         require(receipt.companyId == companyId) { "Comprovante de outra empresa." }
                         require(receipt.paymentStatus == PaymentStatus.PENDING ||
                             receipt.paymentStatus == PaymentStatus.OVERDUE) {
                             "O comprovante já foi baixado ou cancelado."
                         }
-                        receiptDao.update(receipt.copy(
+                        dao.update(receipt.copy(
                             paymentStatus = PaymentStatus.PAID, accountId = accountId
                         ))
                         transactionDao.byReceiptId(linkedId, companyId)

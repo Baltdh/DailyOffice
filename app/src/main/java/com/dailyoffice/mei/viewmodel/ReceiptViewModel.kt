@@ -132,6 +132,10 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
         onError: (String) -> Unit
     ) {
         val companyId = _activeCompanyId.value
+        if (companyId <= 0) {
+            onError("Selecione uma empresa antes de importar.")
+            return
+        }
         viewModelScope.launch(Dispatchers.IO) {
             var archived: AccountingDocument? = null
             try {

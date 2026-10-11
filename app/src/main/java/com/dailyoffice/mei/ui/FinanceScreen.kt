@@ -69,6 +69,10 @@ fun FinanceScreen(
         )
     }
 
+    val monthlyAccountFlows = remember(transactions, closingYear, closingMonth) {
+        FinanceCalculator.monthlyAccountFlows(transactions, closingYear, closingMonth)
+    }
+
     val inventoryMonth = remember(
         stockMovements,
         activeCompany?.id,
@@ -363,7 +367,16 @@ fun FinanceScreen(
                             "A forma de pagamento (Pix, débito, cartão) é diferente da conta que forneceu ou recebeu o dinheiro.",
                             style = MaterialTheme.typography.bodySmall
                         )
+                        Text(
+                            "Fluxo de caixa • ${monthYearLabel(closingYear, closingMonth)}",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            "Entradas e saídas pela data da baixa. O resultado mensal acima usa a data original do lançamento.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
                         accounts.forEach { account ->
+                            val monthlyFlow = monthlyAccountFlows.firstOrNull { it.accountId == account.id }
                             val flow = accountFlows.firstOrNull { it.accountId == account.id }
                             Column(
                                 Modifier.fillMaxWidth(),
@@ -377,9 +390,15 @@ fun FinanceScreen(
                                     accountKindLabel(account.kind),
                                     style = MaterialTheme.typography.bodySmall
                                 )
+                                Text(
+                                    "No mês: entradas ${money(monthlyFlow?.inflowCents ?: 0L)} • " +
+                                        "saídas ${money(monthlyFlow?.outflowCents ?: 0L)} • " +
+                                        "líquido ${moneySigned(monthlyFlow?.netCents ?: 0L)}",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
                                 if (flow != null) {
                                     Text(
-                                        "Entradas ${money(flow.inflowCents)} • " +
+                                        "Acumulado: entradas ${money(flow.inflowCents)} • " +
                                             "Saídas ${money(flow.outflowCents)} • " +
                                             "Líquido ${moneySigned(flow.netCents)}",
                                         style = MaterialTheme.typography.bodySmall
@@ -732,7 +751,11 @@ private fun TransactionCard(
                     style = MaterialTheme.typography.bodySmall
                 )
             }
-            Text(formatDate(transaction.createdAt), style = MaterialTheme.typography.bodySmall)
+            Text("Data do lançamento: ${formatDate(transaction.createdAt)}", style = MaterialTheme.typography.bodySmall)
+            if (transaction.paymentStatus == PaymentStatus.PAID) {
+                Text("Baixa: ${formatDate(transaction.paidAt ?: transaction.createdAt)}",
+                    style = MaterialTheme.typography.bodySmall)
+            }
             if (
                 transaction.paymentStatus == PaymentStatus.PENDING ||
                 transaction.paymentStatus == PaymentStatus.OVERDUE

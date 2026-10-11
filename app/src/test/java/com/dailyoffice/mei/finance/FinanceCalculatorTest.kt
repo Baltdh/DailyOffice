@@ -281,6 +281,62 @@ class FinanceCalculatorTest {
         assertEquals(70_000L, revenue2026)
     }
 
+    @Test
+    fun cashFlowUsesSettlementMonthWhileClosingKeepsOriginalMonth() {
+        val purchase = transactionAt(2026, 9, 20, 8_000,
+            EntryKind.EXPENSE, Ownership.BUSINESS, accountId = 1).copy(
+            paidAt = LocalDate.of(2026, 10, 5).atStartOfDay(utc).toInstant().toEpochMilli()
+        )
+        val sale = transactionAt(2026, 9, 25, 20_000,
+            EntryKind.REVENUE, Ownership.BUSINESS, accountId = 1).copy(paidAt = purchase.paidAt)
+        val transactions = listOf(purchase, sale)
+
+        assertEquals(emptyList<Any>(), FinanceCalculator.monthlyAccountFlows(transactions, 2026, 9, utc))
+        val october = FinanceCalculator.monthlyAccountFlows(transactions, 2026, 10, utc).single()
+        assertEquals(20_000L, october.inflowCents)
+        assertEquals(8_000L, october.outflowCents)
+        assertEquals(12_000L, october.netCents)
+        assertEquals(12_000L, FinanceCalculator.monthlyClosing(transactions, emptyList(), 2026, 9, utc).estimatedProfitCents)
+        assertEquals(0L, FinanceCalculator.monthlyClosing(transactions, emptyList(), 2026, 10, utc).estimatedProfitCents)
+    }
+
+    @Test
+    fun monthlyCashFlowExcludesUnpaidCancelledAndOtherYears() {
+        val paid = transactionAt(2026, 10, 1, 1_000,
+            EntryKind.REVENUE, Ownership.BUSINESS, accountId = 1)
+        val transactions = listOf(paid,
+            paid.copy(amountCents = 9_000, paymentStatus = PaymentStatus.PENDING),
+            paid.copy(amountCents = 8_000, paymentStatus = PaymentStatus.OVERDUE),
+            paid.copy(amountCents = 7_000, paymentStatus = PaymentStatus.CANCELLED),
+            paid.copy(amountCents = 6_000,
+                paidAt = LocalDate.of(2025, 10, 1).atStartOfDay(utc).toInstant().toEpochMilli()))
+
+        // Older paid records without paidAt fall back to createdAt.
+        assertEquals(1_000L, FinanceCalculator.monthlyAccountFlows(transactions, 2026, 10, utc).single().inflowCents)
+    }
+
+    @Test
+    fun monthlyCashTransfersHaveMatchingSourceAndDestination() {
+        val transfer = transactionAt(2026, 9, 30, 5_000,
+            EntryKind.TRANSFER, Ownership.BUSINESS, accountId = 1,
+            counterpartyAccountId = 2).copy(
+            paidAt = LocalDate.of(2026, 10, 2).atStartOfDay(utc).toInstant().toEpochMilli())
+        val flows = FinanceCalculator.monthlyAccountFlows(listOf(transfer), 2026, 10, utc)
+        assertEquals(-5_000L, flows.first { it.accountId == 1L }.netCents)
+        assertEquals(5_000L, flows.first { it.accountId == 2L }.netCents)
+        assertEquals(0L, flows.sumOf { it.netCents })
+    }
+
+    @Test
+    fun monthlyCashFlowRespectsLocalMonthBoundary() {
+        val transaction = transactionAt(2026, 10, 1, 2_000,
+            EntryKind.EXPENSE, Ownership.BUSINESS, accountId = 1).copy(
+            paidAt = java.time.Instant.parse("2026-10-01T01:30:00Z").toEpochMilli())
+        val brazil = ZoneId.of("America/Sao_Paulo")
+        assertEquals(2_000L, FinanceCalculator.monthlyAccountFlows(listOf(transaction), 2026, 9, brazil).single().outflowCents)
+        assertEquals(emptyList<Any>(), FinanceCalculator.monthlyAccountFlows(listOf(transaction), 2026, 10, brazil))
+    }
+
     private fun transactionAt(
         year: Int,
         month: Int,

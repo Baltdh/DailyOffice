@@ -192,6 +192,21 @@ object FinanceCalculator {
         }
     }
 
+    /** Cash movements follow settlement dates; legacy paid entries use their original date. */
+    fun monthlyAccountFlows(
+        transactions: List<Transaction>,
+        year: Int,
+        month: Int,
+        zoneId: ZoneId = ZoneId.systemDefault()
+    ): List<AccountFlow> {
+        require(month in 1..12) { "Mês inválido." }
+        return accountFlows(transactions.filter { transaction ->
+            transaction.paymentStatus == PaymentStatus.PAID &&
+                Instant.ofEpochMilli(transaction.paidAt ?: transaction.createdAt)
+                    .atZone(zoneId).let { it.year == year && it.monthValue == month }
+        })
+    }
+
     fun monthlyClosing(
         transactions: List<Transaction>,
         accounts: List<Account>,

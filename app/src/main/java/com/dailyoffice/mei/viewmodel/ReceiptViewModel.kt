@@ -773,6 +773,9 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
                         )
                     }
 
+                    val previousPaymentDate = transactionDao.byReceiptId(receiptId, receipt.companyId)
+                        .firstOrNull { it.paymentStatus == PaymentStatus.PAID }
+                        ?.let { it.paidAt ?: it.createdAt }
                     transactionDao.deleteByReceiptId(receiptId)
                     stockMovementDao.deleteReceiptPurchases(receiptId)
                     val txDate = receipt.issuedAt ?: receipt.createdAt
@@ -825,7 +828,7 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
                                 paymentMethod = receipt.paymentMethod,
                                 paymentStatus = receipt.paymentStatus,
                                 paidAt = if (receipt.paymentStatus == PaymentStatus.PAID) {
-                                    txDate
+                                    previousPaymentDate ?: txDate
                                 } else null,
                                 dueAt = receipt.dueAt,
                                 createdAt = txDate
@@ -846,7 +849,7 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
                                 paymentMethod = receipt.paymentMethod,
                                 paymentStatus = receipt.paymentStatus,
                                 paidAt = if (receipt.paymentStatus == PaymentStatus.PAID) {
-                                    txDate
+                                    previousPaymentDate ?: txDate
                                 } else null,
                                 dueAt = receipt.dueAt,
                                 createdAt = txDate

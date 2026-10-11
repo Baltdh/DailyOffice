@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.core.content.FileProvider
 import com.dailyoffice.mei.data.Account
 import com.dailyoffice.mei.data.Company
+import com.dailyoffice.mei.data.PaymentStatus
 import com.dailyoffice.mei.data.Receipt
 import com.dailyoffice.mei.data.Transaction
 import java.io.File
@@ -29,7 +30,7 @@ object CsvExporter {
         val accountById = accounts.associateBy { it.id }
 
         file.bufferedWriter().use { out ->
-            out.appendLine("EMPRESA;CNPJ;TIPO_EMPRESA;REGIME_TRIBUTARIO;TIPO;ID;DATA;DESCRICAO;VALOR;CLASSIFICACAO;PAGAMENTO;STATUS;CONTA_ORIGEM;CONTA_DESTINO;DOCUMENTO;CATEGORIA;COMPROVANTE_ID;ENTRA_NO_FLUXO")
+            out.appendLine("EMPRESA;CNPJ;TIPO_EMPRESA;REGIME_TRIBUTARIO;TIPO;ID;DATA;DESCRICAO;VALOR;CLASSIFICACAO;PAGAMENTO;STATUS;CONTA_ORIGEM;CONTA_DESTINO;DOCUMENTO;CATEGORIA;COMPROVANTE_ID;ENTRA_NO_FLUXO;DATA_BAIXA;VENCIMENTO")
 
             receipts.forEach { receipt ->
                 out.appendLine(
@@ -51,7 +52,9 @@ object CsvExporter {
                         receipt.documentNumber,
                         receipt.category,
                         receipt.id.toString(),
-                        "NAO"
+                        "NAO",
+                        "",
+                        receipt.dueAt?.let { date(it) }.orEmpty()
                     ).joinToString(";") { cell(it) }
                 )
             }
@@ -76,7 +79,9 @@ object CsvExporter {
                         "",
                         "",
                         tx.receiptId?.toString().orEmpty(),
-                        "SIM"
+                        if (tx.paymentStatus == PaymentStatus.PAID) "SIM" else "NAO",
+                        if (tx.paymentStatus == PaymentStatus.PAID) date(tx.paidAt ?: tx.createdAt) else "",
+                        tx.dueAt?.let { date(it) }.orEmpty()
                     ).joinToString(";") { cell(it) }
                 )
             }

@@ -37,6 +37,7 @@ object AccountingArchive {
         require(extension in allowedExtensions && (mime in allowedMime || mime.startsWith("text/"))) {
             "Formato não suportado. Use PDF, XML, CSV, TXT ou OFX."
         }
+        require(companyId > 0) { "Selecione uma empresa válida." }
         val directory = File(context.filesDir, "accounting/$companyId")
         check(directory.isDirectory || directory.mkdirs()) { "Não foi possível preparar o arquivo." }
         val target = File(directory, "${UUID.randomUUID()}.$extension")

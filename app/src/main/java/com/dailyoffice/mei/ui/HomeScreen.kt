@@ -39,7 +39,8 @@ fun HomeScreen(
     onCapture: () -> Unit,
     onReviewReady: () -> Unit,
     onFinance: () -> Unit,
-    onInventory: () -> Unit
+    onInventory: () -> Unit,
+    onDocuments: () -> Unit
 ) {
     val context = LocalContext.current
     val receipts by viewModel.receipts.collectAsStateWithLifecycle()
@@ -92,8 +93,9 @@ fun HomeScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("DailyOffice • Contador MEI") },
+                title = { Text("DailyOffice") },
                 actions = {
+                    TextButton(onClick = onDocuments) { Text("Arquivos") }
                     TextButton(onClick = onInventory) { Text("Estoque") }
                     TextButton(onClick = onFinance) { Text("Financeiro") }
                 }

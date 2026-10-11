@@ -601,12 +601,6 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun applyItemSplit(): String? {
-        if (draft.date.isNotBlank() && parseDate(draft.date) == null) {
-            return onError("Informe uma data válida para o comprovante.")
-        }
-        if (draft.dueDate.isNotBlank() && parseDate(draft.dueDate) == null) {
-            return onError("Informe um vencimento válido.")
-        }
         val total = parseCents(draft.total)
             ?: return "Informe um valor total válido antes de aplicar a divisão."
 
@@ -668,6 +662,12 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
     fun updateNotes(v: String) { draft = draft.copy(notes = v) }
 
     fun save(onSaved: () -> Unit, onError: (String) -> Unit) {
+        if (draft.date.isNotBlank() && parseDate(draft.date) == null) {
+            return onError("Informe uma data válida para o comprovante.")
+        }
+        if (draft.dueDate.isNotBlank() && parseDate(draft.dueDate) == null) {
+            return onError("Informe um vencimento válido.")
+        }
         val total = parseCents(draft.total)
             ?: return onError("Informe um valor total válido.")
 

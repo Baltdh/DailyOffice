@@ -254,6 +254,9 @@ data class AccountingDocument(
 interface AccountingDocumentDao {
     @Insert suspend fun insert(document: AccountingDocument): Long
 
+    @Query("SELECT * FROM accounting_documents WHERE companyId = :companyId AND sha256 = :sha256 LIMIT 1")
+    suspend fun findDuplicate(companyId: Long, sha256: String): AccountingDocument?
+
     @Query("SELECT * FROM accounting_documents WHERE companyId = :companyId ORDER BY createdAt DESC")
     fun observeByCompany(companyId: Long): Flow<List<AccountingDocument>>
 

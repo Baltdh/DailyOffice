@@ -93,11 +93,17 @@ fun HomeScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("DailyOffice") },
+                title = { Text("DailyOffice", maxLines = 1, style = MaterialTheme.typography.titleMedium) },
                 actions = {
-                    TextButton(onClick = onDocuments) { Text("Arquivos") }
-                    TextButton(onClick = onInventory) { Text("Estoque") }
                     TextButton(onClick = onFinance) { Text("Financeiro") }
+                    var menuExpanded by remember { mutableStateOf(false) }
+                    Box {
+                        TextButton(onClick = { menuExpanded = true }) { Text("Mais") }
+                        DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                            DropdownMenuItem(text = { Text("Arquivos") }, onClick = { menuExpanded = false; onDocuments() })
+                            DropdownMenuItem(text = { Text("Estoque") }, onClick = { menuExpanded = false; onInventory() })
+                        }
+                    }
                 }
             )
         },

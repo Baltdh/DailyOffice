@@ -97,14 +97,6 @@ fun HomeScreen(
                 title = { Text("DailyOffice", maxLines = 1, style = MaterialTheme.typography.titleMedium) },
                 actions = {
                     TextButton(onClick = onFinance) { Text("Financeiro") }
-                    var menuExpanded by remember { mutableStateOf(false) }
-                    Box {
-                        TextButton(onClick = { menuExpanded = true }) { Text("Mais") }
-                        DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-                            DropdownMenuItem(text = { Text("Arquivos") }, onClick = { menuExpanded = false; onDocuments() })
-                            DropdownMenuItem(text = { Text("Estoque") }, onClick = { menuExpanded = false; onInventory() })
-                        }
-                    }
                 }
             )
         },
@@ -128,8 +120,11 @@ fun HomeScreen(
         ) {
             item {
                 Text("Acesso rápido", style = MaterialTheme.typography.titleMedium)
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { gallery.launch("image/*") }, modifier = Modifier.fillMaxWidth()) { Text("Importar da galeria") }
+                OutlinedButton(
+                    onClick = { gallery.launch("image/*") },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Importar comprovante da galeria")
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = onFinance, modifier = Modifier.weight(1f)) { Text("Financeiro") }

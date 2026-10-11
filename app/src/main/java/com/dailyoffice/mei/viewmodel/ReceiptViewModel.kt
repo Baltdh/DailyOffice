@@ -135,6 +135,12 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
             var archived: AccountingDocument? = null
             try {
                 archived = AccountingArchive.import(getApplication(), uri, companyId, type)
+                val duplicate = accountingDocumentDao.findDuplicate(companyId, archived.sha256)
+                if (duplicate != null) {
+                    java.io.File(archived.localPath).delete()
+                    archived = null
+                    throw IllegalArgumentException("Arquivo já cadastrado nesta empresa: ${duplicate.displayName}")
+                }
                 accountingDocumentDao.insert(archived)
                 withContext(Dispatchers.Main) { onSaved() }
             } catch (e: Exception) {

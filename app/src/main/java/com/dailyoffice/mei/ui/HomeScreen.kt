@@ -10,6 +10,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
@@ -109,13 +111,18 @@ fun HomeScreen(
             )
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
+            FloatingActionButton(
                 onClick = onCapture,
-                modifier = Modifier.navigationBarsPadding().imePadding()
+                modifier = Modifier.navigationBarsPadding().imePadding(),
+                shape = androidx.compose.foundation.shape.CircleShape
             ) {
-                Text("Fotografar")
+                Icon(
+                    imageVector = androidx.compose.material.icons.Icons.Default.CameraAlt,
+                    contentDescription = "Fotografar comprovante"
+                )
             }
-        }
+        },
+        floatingActionButtonPosition = FabPosition.Center
     ) { pad ->
         LazyColumn(
             modifier = Modifier

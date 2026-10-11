@@ -155,6 +155,27 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun updateAccountingDocumentNotes(
+        document: AccountingDocument,
+        notes: String,
+        onSaved: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        val companyId = _activeCompanyId.value
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                require(notes.length <= 1000) { "Observações devem ter até 1000 caracteres." }
+                check(accountingDocumentDao.byId(document.id, companyId) != null) {
+                    "Documento não pertence à empresa ativa."
+                }
+                accountingDocumentDao.updateNotes(document.id, companyId, notes.trim())
+                withContext(Dispatchers.Main) { onSaved() }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { onError(e.message ?: "Falha ao salvar observações.") }
+            }
+        }
+    }
+
     fun deleteAccountingDocument(
         document: AccountingDocument,
         onDone: () -> Unit,

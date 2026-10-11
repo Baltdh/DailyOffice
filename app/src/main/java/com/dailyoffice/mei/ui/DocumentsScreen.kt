@@ -98,6 +98,19 @@ fun DocumentsScreen(viewModel: ReceiptViewModel, onBack: () -> Unit) {
                                     context.startActivity(Intent.createChooser(intent, "Abrir documento"))
                                 }.onFailure { message = it.message ?: "Não foi possível abrir." }
                             }) { Text("Abrir") }
+                            OutlinedButton(onClick = {
+                                runCatching {
+                                    val uri = FileProvider.getUriForFile(
+                                        context, "${context.packageName}.fileprovider", File(doc.localPath)
+                                    )
+                                    val intent = Intent(Intent.ACTION_SEND).apply {
+                                        type = doc.mimeType
+                                        putExtra(Intent.EXTRA_STREAM, uri)
+                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    }
+                                    context.startActivity(Intent.createChooser(intent, "Compartilhar documento"))
+                                }.onFailure { message = it.message ?: "Falha ao compartilhar." }
+                            }) { Text("Enviar") }
                             TextButton(onClick = { pendingDelete = doc }) { Text("Excluir") }
                         }
                     }

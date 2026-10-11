@@ -2,9 +2,12 @@
 
 Aplicativo Android local-first para fotografar e arquivar comprovantes, extrair dados por OCR e organizar finanças pessoais e empresariais, com suporte a múltiplos CNPJs e diferentes enquadramentos.
 
-## Estado atual — v0.18.0
+## Estado atual — v0.19.0
 
 O DailyOffice já possui:
+
+- validação estrita de datas e bloqueio de valores negativos em comprovantes;
+- navegação pelo botão Voltar do Android;
 
 - fluxo de caixa mensal por conta com base na data da baixa;
 - preservação da data da baixa ao editar comprovantes quitados;

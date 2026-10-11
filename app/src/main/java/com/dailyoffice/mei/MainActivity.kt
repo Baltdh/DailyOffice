@@ -1,6 +1,7 @@
 package com.dailyoffice.mei
 
 import android.os.Bundle
+import androidx.activity.compose.BackHandler
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.material3.MaterialTheme
@@ -24,6 +25,8 @@ class MainActivity : ComponentActivity() {
             MaterialTheme {
                 val vm: ReceiptViewModel = viewModel()
                 var screen by rememberSaveable { mutableStateOf(Screen.HOME) }
+
+                BackHandler(enabled = screen != Screen.HOME) { screen = Screen.HOME }
 
                 when (screen) {
                     Screen.HOME -> HomeScreen(

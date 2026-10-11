@@ -8,6 +8,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.room.withTransaction
+import com.dailyoffice.mei.finance.DateInput
 import com.dailyoffice.mei.data.*
 import com.dailyoffice.mei.document.AccountingArchive
 import com.dailyoffice.mei.export.CsvExporter
@@ -600,6 +601,12 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun applyItemSplit(): String? {
+        if (draft.date.isNotBlank() && parseDate(draft.date) == null) {
+            return onError("Informe uma data válida para o comprovante.")
+        }
+        if (draft.dueDate.isNotBlank() && parseDate(draft.dueDate) == null) {
+            return onError("Informe um vencimento válido.")
+        }
         val total = parseCents(draft.total)
             ?: return "Informe um valor total válido antes de aplicar a divisão."
 
@@ -676,6 +683,9 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
             else -> 0
         }
 
+        if (total <= 0 || business < 0 || personal < 0) {
+            return onError("O total precisa ser positivo e as parcelas não podem ser negativas.")
+        }
         if (draft.ownership == Ownership.MIXED && business + personal != total) {
             return onError("Em compra mista, empresa + pessoal precisa ser igual ao total.")
         }
@@ -938,7 +948,13 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
             EntryKind.TRANSFER -> Ownership.BUSINESS
         }
 
+        if (date.isNotBlank() && parseDate(date) == null) {
+            return onError("Informe uma data válida no formato dd/mm/aaaa.")
+        }
         val createdAt = parseDate(date) ?: System.currentTimeMillis()
+        if (dueDate.isNotBlank() && parseDate(dueDate) == null) {
+            return onError("Informe um vencimento válido no formato dd/mm/aaaa.")
+        }
         val dueAt = parseDate(dueDate)
 
         viewModelScope.launch(Dispatchers.IO) {
@@ -1044,6 +1060,9 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
             EntryKind.TRANSFER
         }
 
+        if (date.isNotBlank() && parseDate(date) == null) {
+            return onError("Informe uma data válida no formato dd/mm/aaaa.")
+        }
         val createdAt = parseDate(date) ?: System.currentTimeMillis()
         val description = note.trim().ifBlank {
             if (reimbursement) {
@@ -1089,11 +1108,8 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
     ) {
         val companyId = _activeCompanyId.value
         if (accountId == null) return onError("Selecione a conta do pagamento ou recebimento.")
-        val paidAt = runCatching {
-            LocalDate.parse(date.trim(), DateTimeFormatter.ofPattern("d/M/uuuu")
-                .withResolverStyle(java.time.format.ResolverStyle.STRICT))
-                .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
-        }.getOrNull() ?: return onError("Informe uma data válida no formato dd/mm/aaaa.")
+        val paidAt = parseDate(date)
+            ?: return onError("Informe uma data válida no formato dd/mm/aaaa.")
         viewModelScope.launch(Dispatchers.IO) {
             runCatching {
                 db.withTransaction {
@@ -1660,38 +1676,9 @@ class ReceiptViewModel(application: Application) : AndroidViewModel(application)
     private fun formatCents(cents: Long): String =
         "%.2f".format(java.util.Locale("pt", "BR"), cents / 100.0)
 
-    private fun parseLocalDate(value: String): LocalDate? {
-        if (value.isBlank()) return null
+    private fun parseLocalDate(value: String): LocalDate? = DateInput.parse(value)
 
-        val normalized = value
-            .replace('.', '/')
-            .replace('-', '/')
-
-        return runCatching {
-            LocalDate.parse(
-                normalized,
-                DateTimeFormatter.ofPattern("d/M/uuuu")
-            )
-        }.getOrNull()
-    }
-
-    private fun parseDate(value: String): Long? {
-        if (value.isBlank()) return null
-
-        val normalized = value
-            .replace('.', '/')
-            .replace('-', '/')
-
-        return runCatching {
-            LocalDate.parse(
-                normalized,
-                DateTimeFormatter.ofPattern("d/M/uuuu")
-            )
-                .atStartOfDay(ZoneId.systemDefault())
-                .toInstant()
-                .toEpochMilli()
-        }.getOrNull()
-    }
+    private fun parseDate(value: String): Long? = DateInput.epoch(value)
 
     private fun formatDate(epoch: Long?): String {
         if (epoch == null) return ""

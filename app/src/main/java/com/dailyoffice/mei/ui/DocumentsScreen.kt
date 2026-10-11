@@ -26,15 +26,19 @@ fun DocumentsScreen(viewModel: ReceiptViewModel, onBack: () -> Unit) {
     val documents by viewModel.accountingDocuments.collectAsStateWithLifecycle()
     val company by viewModel.activeCompany.collectAsStateWithLifecycle()
     var selectedType by remember { mutableStateOf(AccountingDocumentType.BOLETO) }
+    var importing by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var pendingDelete by remember { mutableStateOf<AccountingDocument?>(null) }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) viewModel.importAccountingDocument(
-            uri, selectedType,
-            onSaved = { message = "Documento arquivado com sucesso." },
-            onError = { message = it }
-        )
+        if (uri != null) {
+            importing = true
+            viewModel.importAccountingDocument(
+                uri, selectedType,
+                onSaved = { importing = false; message = "Documento arquivado com sucesso." },
+                onError = { importing = false; message = it }
+            )
+        }
     }
 
     Scaffold(topBar = {
@@ -69,8 +73,8 @@ fun DocumentsScreen(viewModel: ReceiptViewModel, onBack: () -> Unit) {
                         ))
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = company != null
-                ) { Text("Selecionar arquivo (até 25 MB)") }
+                    enabled = company != null && !importing
+                ) { Text(if (importing) "Importando..." else "Selecionar arquivo (até 25 MB)") }
                 Text("Importar não registra pagamento, vencimento ou despesa automaticamente. Confira os dados antes de lançar no financeiro.", style = MaterialTheme.typography.bodySmall)
             }
             message?.let { notice ->

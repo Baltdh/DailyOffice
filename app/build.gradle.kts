@@ -17,6 +17,13 @@ android {
     }
 }
 
+configurations.configureEach {
+    // Kotlin 1.8+ folds these JDK extensions into kotlin-stdlib; older transitive
+    // ML Kit dependencies may still request the split 1.6 artifacts.
+    exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib-jdk7")
+    exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib-jdk8")
+}
+
 dependencies {
     implementation("androidx.core:core:1.15.0")
     // Bundled model: OCR is available immediately and works offline after installation.

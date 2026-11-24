@@ -5,22 +5,27 @@ import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** Heuristic receipt parser. It proposes a value but never saves a transaction automatically. */
+/** Contextual receipt/payroll parser. Suggestions are reviewed by the user before saving. */
 public final class ReceiptParser {
     private static final Pattern AMOUNT = Pattern.compile(
             "(?<![0-9])(?:R\\s*\\$\\s*)?((?:[0-9]{1,3}(?:[.,\\s][0-9]{3})+|[0-9]+)(?:[.,][0-9]{1,2})?)(?![0-9])",
             Pattern.CASE_INSENSITIVE);
 
-    private static final String[] HIGH_VALUE_LABELS = {
-            "TOTAL A PAGAR", "VALOR A PAGAR", "VALOR TOTAL", "TOTAL DA NOTA",
-            "TOTAL GERAL", "TOTAL DA COMPRA", "TOTAL DO PEDIDO", "VALOR FINAL",
-            "TOTAL PAGO", "VALOR PAGO", "TOTAL"
+    private static final String[] NET_LABELS = {
+            "TOTAL LIQUIDO", "VALOR LIQUIDO", "LIQUIDO A RECEBER", "LIQUIDO A PAGAR",
+            "VALOR A RECEBER", "VALOR RECEBIDO"
     };
+    private static final String[] PAYABLE_LABELS = {
+            "TOTAL A PAGAR", "VALOR A PAGAR", "VALOR TOTAL", "TOTAL DA NOTA",
+            "TOTAL GERAL", "TOTAL DA COMPRA", "TOTAL DO PEDIDO", "VALOR FINAL", "TOTAL PAGO"
+    };
+    private static final String[] WEAK_TOTAL_LABELS = {"TOTAL"};
     private static final String[] EXCLUDED_TERMS = {
             "TROCO", "DESCONTO", "SUBTOTAL", "TRIBUTOS", "IMPOSTO", "ICMS",
             "PIS", "COFINS", "BASE DE CALCULO", "VALOR APROXIMADO DOS TRIBUTOS",
             "TAXA DE SERVICO", "JUROS", "MULTA", "TOTAL DE ITENS",
-            "QUANTIDADE TOTAL", "QTD TOTAL", "NUMERO DE ITENS"
+            "QUANTIDADE TOTAL", "QTD TOTAL", "NUMERO DE ITENS", "TOTAL DOS DESCONTOS",
+            "TOTAL DE DESCONTOS", "TOTAL DOS PROVENTOS", "TOTAL DE PROVENTOS"
     };
     private static final String[] IDENTIFICATION_TERMS = {
             "CNPJ", "CPF", "CHAVE DE ACESSO", "PROTOCOLO", "INSCRICAO ESTADUAL",
@@ -33,6 +38,7 @@ public final class ReceiptParser {
     public static Result parse(String rawText) {
         String source = rawText == null ? "" : rawText;
         String[] lines = source.split("\\R");
+        boolean payroll = isPayrollDocument(source);
         Candidate best = null;
 
         for (int lineIndex = 0; lineIndex < lines.length; lineIndex++) {
@@ -50,80 +56,79 @@ public final class ReceiptParser {
                 } catch (IllegalArgumentException ex) {
                     continue;
                 }
-                String contextualPrefix = "";
-                if (lineIndex > 0) {
-                    String previousLine = normalize(lines[lineIndex - 1]);
-                    if (!containsAny(previousLine, EXCLUDED_TERMS)
-                            && (containsAny(previousLine, HIGH_VALUE_LABELS)
-                            || lastWholeWordIndex(previousLine, "VALOR") >= 0)) {
-                        contextualPrefix = previousLine + " ";
-                    }
+                String prefix = normalize(originalLine.substring(0, matcher.start()));
+                String previous = lineIndex > 0 ? normalize(lines[lineIndex - 1]) : "";
+                String context = prefix;
+                if (previous.length() > 0 && !containsAny(previous, EXCLUDED_TERMS)
+                        && (containsAny(previous, NET_LABELS) || containsAny(previous, PAYABLE_LABELS)
+                        || previous.matches(".*\\bTOTAL\\b.*"))) {
+                    context = previous + " " + context;
                 }
-                contextualPrefix += normalize(originalLine.substring(0, matcher.start()));
-                int score = scoreCandidate(contextualPrefix, contextualPrefix.length(),
-                        matcher.group().toUpperCase(Locale.ROOT).contains("R$"),
-                        token.matches(".*[,.][0-9]{1,2}$"), lineIndex, lines.length);
+                int score = scoreCandidate(context, matcher.group().toUpperCase(Locale.ROOT).contains("R$"),
+                        token.matches(".*[,.][0-9]{1,2}$"), lineIndex, lines.length, payroll);
                 if (best == null || score > best.score || (score == best.score && lineIndex > best.lineIndex)) {
                     best = new Candidate(cents, score, lineIndex, originalLine);
                 }
             }
         }
 
-        String description = extractDescription(lines);
-        if (best == null || best.score < 30) {
-            return new Result(false, 0L, description, "", "Não identificado", 0, source);
+        String description = extractDescription(lines, payroll);
+        String suggestedKind = payroll ? "Receita pessoal" : "Despesa empresarial";
+        if (best == null || best.score < 35) {
+            return new Result(false, 0L, description, "", "Não identificado", 0, source, payroll, suggestedKind);
         }
-        String confidence = best.score >= 110 ? "Alta" : best.score >= 60 ? "Média" : "Baixa";
-        return new Result(true, best.cents, description, best.line, confidence, best.score, source);
+        String confidence = best.score >= 145 ? "Alta" : best.score >= 85 ? "Média" : "Baixa";
+        return new Result(true, best.cents, description, best.line, confidence, best.score,
+                source, payroll, suggestedKind);
     }
 
-    private static int scoreCandidate(String before, int prefixLength, boolean explicitCurrency,
-                                      boolean hasDecimal, int lineIndex, int lineCount) {
+    private static int scoreCandidate(String context, boolean explicitCurrency, boolean hasDecimal,
+                                      int lineIndex, int lineCount, boolean payroll) {
         int score = 0;
-        int nearestLabel = -1;
-        int labelScore = 0;
-        for (String label : HIGH_VALUE_LABELS) {
-            int index = lastWholeWordIndex(before, label);
-            if (index >= 0) {
-                int currentScore = label.equals("TOTAL") ? 105 : 150;
-                if (currentScore > labelScore || (currentScore == labelScore && index > nearestLabel)) {
-                    nearestLabel = index;
-                    labelScore = currentScore;
-                }
-            }
-        }
-        if (nearestLabel >= 0) {
-            int distance = Math.max(0, prefixLength - nearestLabel);
-            score += Math.max(45, labelScore - Math.min(55, distance / 2));
-        } else if (lastWholeWordIndex(before, "VALOR") >= 0) {
-            score += 70;
-        }
+        int netIndex = lastLabelIndex(context, NET_LABELS);
+        int payableIndex = lastLabelIndex(context, PAYABLE_LABELS);
+        int weakTotalIndex = lastLabelIndex(context, WEAK_TOTAL_LABELS);
+        int excludedIndex = lastLabelIndex(context, EXCLUDED_TERMS);
 
-        if (explicitCurrency || before.matches(".*R\\s*\\$.*")) score += 30;
-        // An unlabelled integer is too often an item count, code or quantity rather than money.
-        if (!hasDecimal && !explicitCurrency && labelScore <= 105) score -= 100;
+        if (netIndex >= 0) score += 230;
+        else if (payroll) {
+            if (lastLabelIndex(context, new String[]{"FERIAS"}) >= 0) score += 25;
+            if (lastLabelIndex(context, new String[]{"PROVENTOS"}) >= 0) score += 35;
+        } else if (payableIndex >= 0) score += 185;
+        else if (weakTotalIndex >= 0) score += 105;
+        else if (lastLabelIndex(context, new String[]{"VALOR"}) >= 0) score += 65;
 
-        int latestPenalty = -1;
-        for (String term : EXCLUDED_TERMS) {
-            int index = before.lastIndexOf(term);
-            if (index > latestPenalty) latestPenalty = index;
+        if (explicitCurrency) score += 25;
+        if (hasDecimal) score += 12;
+        if (!hasDecimal && !explicitCurrency && netIndex < 0 && payableIndex < 0) score -= 100;
+
+        if (excludedIndex >= 0) {
+            int positiveIndex = Math.max(netIndex, payableIndex);
+            if (excludedIndex > positiveIndex) score -= 180;
         }
-        if (latestPenalty >= 0 && latestPenalty > nearestLabel) score -= 130;
-
-        // A receipt's final payable amount is commonly near the bottom, but location alone
-        // is deliberately too weak to override a labelled subtotal, tax, discount or change.
-        if (lineCount > 1) score += (lineIndex * 8) / lineCount;
+        if (lineCount > 1) score += (lineIndex * 6) / lineCount;
         return score;
     }
 
-    private static int lastWholeWordIndex(String text, String word) {
-        Matcher matcher = Pattern.compile("\\b" + Pattern.quote(word) + "\\b").matcher(text);
+    private static int lastLabelIndex(String text, String[] labels) {
         int found = -1;
-        while (matcher.find()) found = matcher.start();
+        for (String label : labels) {
+            Matcher matcher = Pattern.compile("\\b" + Pattern.quote(label) + "\\b").matcher(text);
+            while (matcher.find()) found = Math.max(found, matcher.start());
+        }
         return found;
     }
 
-    private static String extractDescription(String[] lines) {
+    private static boolean isPayrollDocument(String text) {
+        String n = normalize(text);
+        return n.contains("AVISO E RECIBO DE FERIAS") || n.contains("RECIBO DE FERIAS")
+                || n.contains("HOLERITE") || n.contains("CONTRACHEQUE")
+                || n.contains("FOLHA DE PAGAMENTO") || n.contains("DEMONSTRATIVO DE PAGAMENTO")
+                || n.contains("TOTAL LIQUIDO") && (n.contains("PROVENTOS") || n.contains("DESCONTOS"));
+    }
+
+    private static String extractDescription(String[] lines, boolean payroll) {
+        if (payroll) return "Recebimento de férias / salário";
         int inspected = 0;
         for (String raw : lines) {
             if (inspected++ >= 8) break;
@@ -137,7 +142,7 @@ public final class ReceiptParser {
                     || normalized.contains("CONSULTE PELA CHAVE")) continue;
             return line.length() > 70 ? line.substring(0, 70) : line;
         }
-        return "Despesa via comprovante";
+        return "Documento importado";
     }
 
     private static boolean containsAny(String text, String[] terms) {
@@ -152,15 +157,9 @@ public final class ReceiptParser {
     }
 
     private static final class Candidate {
-        final long cents;
-        final int score;
-        final int lineIndex;
-        final String line;
+        final long cents; final int score; final int lineIndex; final String line;
         Candidate(long cents, int score, int lineIndex, String line) {
-            this.cents = cents;
-            this.score = score;
-            this.lineIndex = lineIndex;
-            this.line = line;
+            this.cents = cents; this.score = score; this.lineIndex = lineIndex; this.line = line;
         }
     }
 
@@ -172,16 +171,14 @@ public final class ReceiptParser {
         public final String confidence;
         public final int score;
         public final String rawText;
+        public final boolean payrollDocument;
+        public final String suggestedKind;
 
         Result(boolean hasAmount, long amountCents, String description, String selectedLine,
-               String confidence, int score, String rawText) {
-            this.hasAmount = hasAmount;
-            this.amountCents = amountCents;
-            this.description = description;
-            this.selectedLine = selectedLine;
-            this.confidence = confidence;
-            this.score = score;
-            this.rawText = rawText;
+               String confidence, int score, String rawText, boolean payrollDocument, String suggestedKind) {
+            this.hasAmount = hasAmount; this.amountCents = amountCents; this.description = description;
+            this.selectedLine = selectedLine; this.confidence = confidence; this.score = score;
+            this.rawText = rawText; this.payrollDocument = payrollDocument; this.suggestedKind = suggestedKind;
         }
     }
 }

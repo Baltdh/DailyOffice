@@ -253,6 +253,21 @@ public class MainActivity extends Activity {
         });
     }
 
+    private View dashboardTile(String label, int slot) {
+        LinearLayout tile = card(Color.WHITE);
+        tile.setPadding(dp(14), dp(12), dp(14), dp(12));
+        tile.addView(text(label, 13, INK, true));
+        TextView value = text("R$ 0,00", 19, INK, true);
+        value.setPadding(0, dp(5), 0, 0);
+        tile.addView(value);
+        if (slot == 0) businessRevenueView = value;
+        else if (slot == 1) expenseView = value;
+        else if (slot == 2) pendingView = value;
+        else if (slot == 3) receivableView = value;
+        else if (slot == 4) personalExpensesView = value;
+        return tile;
+    }
+
     private View metric(String label, String initial, boolean primary) {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);

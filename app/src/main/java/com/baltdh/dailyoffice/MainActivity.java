@@ -163,6 +163,13 @@ public class MainActivity extends Activity {
         rowTwo.addView(dashboardTile("A receber", 3), new LinearLayout.LayoutParams(0, -2, 1));
         root.addView(rowTwo, margin(0, 0, 0, 10));
         root.addView(dashboardTile("Gastos pessoais identificados", 4), margin(0, 0, 0, 10));
+        LinearLayout resultCard = card(Color.rgb(255,255,255));
+        resultCard.setPadding(dp(14), dp(12), dp(14), dp(12));
+        resultCard.addView(text("Resultado empresarial", 13, INK, true));
+        resultView = text("R$ 0,00", 19, INK, true);
+        resultView.setPadding(0, dp(5), 0, 0);
+        resultCard.addView(resultView);
+        root.addView(resultCard, margin(0, 0, 0, 10));
         LinearLayout meiCard = card(Color.WHITE); meiCard.setPadding(dp(16), dp(14), dp(16), dp(14));
         meiCard.addView(text("Limite MEI", 17, INK, true));
         meiUsedView = text("R$ 0,00 de R$ 33.750,00", 19, INK, true);

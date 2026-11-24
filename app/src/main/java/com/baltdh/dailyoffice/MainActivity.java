@@ -5,9 +5,14 @@ import android.content.ContentValues;
 import android.content.Intent;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
+import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
 import android.text.InputType;
+import android.view.Gravity;
+import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
@@ -27,32 +32,34 @@ import java.io.IOException;
 
 public class MainActivity extends Activity {
     private static final int REQUEST_RECEIPT_IMAGE = 431;
-    private static final String KIND_BUSINESS_REVENUE = "Receita empresarial";
-    private static final String KIND_BUSINESS_EXPENSE = "Despesa empresarial";
-    private static final String KIND_PERSONAL_REVENUE = "Receita pessoal";
-    private static final String KIND_PERSONAL_EXPENSE = "Despesa pessoal";
-    private static final String KIND_CAPITAL_CONTRIBUTION = "Aporte pessoal";
-    private static final String KIND_BUSINESS_EXPENSE_PERSONAL = "Despesa da empresa paga pessoalmente";
-    private static final String KIND_TRANSFER = "Transferência entre contas próprias";
+    private static final String BUSINESS_REVENUE = "Receita empresarial";
+    private static final String BUSINESS_EXPENSE = "Despesa empresarial";
+    private static final String PERSONAL_REVENUE = "Receita pessoal";
+    private static final String PERSONAL_EXPENSE = "Despesa pessoal";
+    private static final String CONTRIBUTION = "Aporte pessoal";
+    private static final String BUSINESS_EXPENSE_PERSONAL = "Despesa da empresa paga pessoalmente";
+    private static final String TRANSFER = "Transferência entre contas próprias";
+
+    private static final int INK = Color.rgb(29, 38, 55);
+    private static final int MUTED = Color.rgb(111, 123, 142);
+    private static final int PRIMARY = Color.rgb(83, 78, 210);
+    private static final int BG = Color.rgb(246, 247, 251);
+    private static final int GREEN = Color.rgb(24, 145, 105);
 
     private SQLiteDatabase db;
-    private TextView summary;
-    private TextView receiptPreview;
-    private EditText descriptionInput;
-    private EditText amountInput;
+    private TextView summary, businessRevenueView, expenseView, resultView, receiptPreview;
+    private EditText descriptionInput, amountInput;
     private Spinner kindInput;
     private Button receiptButton;
     private TextRecognizer textRecognizer;
 
-    @Override
-    public void onCreate(Bundle state) {
+    @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        getWindow().setStatusBarColor(Color.rgb(246, 247, 251));
+        getWindow().setNavigationBarColor(Color.rgb(246, 247, 251));
+        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
         db = openOrCreateDatabase("dailyoffice.db", MODE_PRIVATE, null);
-        db.execSQL("CREATE TABLE IF NOT EXISTS entries(" +
-                "id INTEGER PRIMARY KEY AUTOINCREMENT," +
-                "kind TEXT NOT NULL," +
-                "amount INTEGER NOT NULL," +
-                "description TEXT NOT NULL)");
+        db.execSQL("CREATE TABLE IF NOT EXISTS entries(id INTEGER PRIMARY KEY AUTOINCREMENT,kind TEXT NOT NULL,amount INTEGER NOT NULL,description TEXT NOT NULL)");
         textRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
         buildScreen();
         refreshSummary();
@@ -61,71 +68,99 @@ public class MainActivity extends Activity {
     private void buildScreen() {
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
+        scroll.setBackgroundColor(BG);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        int padding = dp(18);
-        root.setPadding(padding, padding, padding, padding);
+        root.setPadding(dp(18), dp(22), dp(18), dp(28));
         scroll.addView(root);
         setContentView(scroll);
 
-        TextView title = new TextView(this);
-        title.setText("DailyOffice · Controle financeiro");
-        title.setTextSize(21);
-        title.setPadding(0, 0, 0, dp(10));
+        TextView eyebrow = text("GESTÃO FINANCEIRA", 11, PRIMARY, true);
+        root.addView(eyebrow);
+        TextView title = text("DailyOffice", 29, INK, true);
+        title.setPadding(0, dp(3), 0, 0);
         root.addView(title);
+        TextView subtitle = text("Seu negócio e suas contas em ordem.", 14, MUTED, false);
+        subtitle.setPadding(0, 0, 0, dp(18));
+        root.addView(subtitle);
 
-        summary = new TextView(this);
-        summary.setTextSize(15);
-        summary.setTextIsSelectable(true);
-        summary.setPadding(0, 0, 0, dp(14));
-        root.addView(summary);
+        LinearLayout hero = card(Color.rgb(37, 43, 83));
+        hero.setPadding(dp(18), dp(18), dp(18), dp(18));
+        TextView heroLabel = text("RESULTADO EMPRESARIAL", 11, Color.rgb(211, 214, 255), true);
+        hero.addView(heroLabel);
+        resultView = text("R$ 0,00", 29, Color.WHITE, true);
+        resultView.setPadding(0, dp(8), 0, dp(14));
+        hero.addView(resultView);
+        LinearLayout metrics = new LinearLayout(this);
+        metrics.setOrientation(LinearLayout.HORIZONTAL);
+        metrics.addView(metric("Faturamento", "R$ 0,00", true), new LinearLayout.LayoutParams(0, -2, 1));
+        metrics.addView(metric("Despesas", "R$ 0,00", false), new LinearLayout.LayoutParams(0, -2, 1));
+        hero.addView(metrics);
+        root.addView(hero, margin(0, 0, 0, 16));
 
-        receiptButton = new Button(this);
-        receiptButton.setText("Ler nota ou comprovante (OCR)");
-        receiptButton.setAllCaps(false);
-        root.addView(receiptButton, matchWidth());
-        receiptButton.setOnClickListener(v -> openReceiptPicker());
+        TextView section = text("Lançamentos", 18, INK, true);
+        root.addView(section, margin(0, 0, 0, 8));
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        Button scan = button("Ler documento", PRIMARY);
+        receiptButton = scan;
+        scan.setOnClickListener(v -> openReceiptPicker());
+        actions.addView(scan, new LinearLayout.LayoutParams(0, dp(50), 1));
+        Button manual = button("Novo manual", Color.rgb(230, 231, 250));
+        manual.setTextColor(PRIMARY);
+        manual.setOnClickListener(v -> {
+            descriptionInput.requestFocus();
+            Toast.makeText(this, "Preencha os dados do lançamento abaixo.", Toast.LENGTH_SHORT).show();
+        });
+        LinearLayout.LayoutParams manualParams = new LinearLayout.LayoutParams(0, dp(50), 1);
+        manualParams.leftMargin = dp(9);
+        actions.addView(manual, manualParams);
+        root.addView(actions, margin(0, 0, 0, 8));
 
-        TextView privacyHint = new TextView(this);
-        privacyHint.setText("A leitura é feita no próprio aparelho. Confira os dados sugeridos antes de salvar.");
-        privacyHint.setTextSize(12);
-        privacyHint.setPadding(0, dp(4), 0, dp(8));
-        root.addView(privacyHint);
+        TextView privacy = text("OCR no próprio aparelho • você confere antes de salvar", 11, MUTED, false);
+        root.addView(privacy, margin(2, 0, 0, 12));
 
-        receiptPreview = new TextView(this);
-        receiptPreview.setTextSize(12);
-        receiptPreview.setPadding(dp(8), dp(8), dp(8), dp(8));
-        receiptPreview.setMaxLines(12);
-        root.addView(receiptPreview);
-
-        descriptionInput = new EditText(this);
-        descriptionInput.setHint("Descrição / estabelecimento");
-        descriptionInput.setSingleLine(false);
-        root.addView(descriptionInput, matchWidth());
-
-        amountInput = new EditText(this);
-        amountInput.setHint("Valor em R$ (ex.: 1.234,56)");
-        amountInput.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
-        root.addView(amountInput, matchWidth());
+        LinearLayout form = card(Color.WHITE);
+        form.setPadding(dp(16), dp(16), dp(16), dp(16));
+        form.addView(text("Conferir lançamento", 17, INK, true), margin(0, 0, 0, 12));
+        descriptionInput = field("Descrição ou estabelecimento", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        form.addView(descriptionInput, margin(0, 0, 0, 9));
+        amountInput = field("Valor em R$  •  ex.: 1.234,56", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        form.addView(amountInput, margin(0, 0, 0, 9));
 
         kindInput = new Spinner(this);
-        String[] kinds = {
-                KIND_BUSINESS_REVENUE,
-                KIND_BUSINESS_EXPENSE,
-                KIND_PERSONAL_REVENUE,
-                KIND_PERSONAL_EXPENSE,
-                KIND_CAPITAL_CONTRIBUTION,
-                KIND_BUSINESS_EXPENSE_PERSONAL,
-                KIND_TRANSFER
-        };
-        kindInput.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, kinds));
-        root.addView(kindInput, matchWidth());
+        String[] kinds = {BUSINESS_REVENUE, BUSINESS_EXPENSE, PERSONAL_REVENUE, PERSONAL_EXPENSE, CONTRIBUTION, BUSINESS_EXPENSE_PERSONAL, TRANSFER};
+        kindInput.setAdapter(new ArrayAdapter<String>(this, android.R.layout.simple_spinner_dropdown_item, kinds));
+        form.addView(kindInput, margin(0, 0, 0, 12));
+        Button save = button("Salvar lançamento", GREEN);
+        save.setOnClickListener(v -> saveEntry());
+        form.addView(save, new LinearLayout.LayoutParams(-1, dp(50)));
+        root.addView(form, margin(0, 0, 0, 14));
 
-        Button saveButton = new Button(this);
-        saveButton.setText("Salvar lançamento");
-        saveButton.setAllCaps(false);
-        root.addView(saveButton, matchWidth());
-        saveButton.setOnClickListener(v -> saveEntry());
+        LinearLayout review = card(Color.WHITE);
+        review.setPadding(dp(14), dp(14), dp(14), dp(14));
+        review.addView(text("Leitura do documento", 15, INK, true));
+        receiptPreview = text("Nenhum documento importado. Toque em “Ler documento” para começar.", 12, MUTED, false);
+        receiptPreview.setPadding(0, dp(8), 0, 0);
+        review.addView(receiptPreview);
+        root.addView(review, margin(0, 0, 0, 14));
+
+        LinearLayout details = card(Color.WHITE);
+        details.setPadding(dp(16), dp(15), dp(16), dp(15));
+        details.addView(text("Visão geral", 16, INK, true), margin(0, 0, 0, 8));
+        summary = text("Sem lançamentos.", 13, MUTED, false);
+        details.addView(summary);
+        root.addView(details);
+    }
+
+    private View metric(String label, String initial, boolean primary) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.addView(text(label, 11, Color.rgb(206, 211, 239), false));
+        TextView value = text(initial, 16, Color.WHITE, true);
+        box.addView(value);
+        if (primary) businessRevenueView = value; else expenseView = value;
+        return box;
     }
 
     private void openReceiptPicker() {
@@ -134,179 +169,132 @@ public class MainActivity extends Activity {
         intent.setType("image/*");
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         try {
-            startActivityForResult(Intent.createChooser(intent, "Selecione a foto da nota ou comprovante"),
-                    REQUEST_RECEIPT_IMAGE);
+            startActivityForResult(Intent.createChooser(intent, "Escolha uma nota ou comprovante"), REQUEST_RECEIPT_IMAGE);
         } catch (android.content.ActivityNotFoundException ex) {
-            Toast.makeText(this, "Nenhum aplicativo disponível para selecionar imagens", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Nenhum seletor de imagens disponível.", Toast.LENGTH_LONG).show();
         }
     }
 
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode != REQUEST_RECEIPT_IMAGE || resultCode != RESULT_OK || data == null || data.getData() == null) {
-            return;
-        }
-        Uri imageUri = data.getData();
-        receiptButton.setEnabled(false);
-        receiptPreview.setText("Lendo a imagem e procurando o valor total...");
-
+        if (requestCode != REQUEST_RECEIPT_IMAGE || resultCode != RESULT_OK || data == null || data.getData() == null) return;
+        Uri uri = data.getData();
+        receiptPreview.setText("Analisando o documento…");
+        receiptButtonState(false);
         try {
-            InputImage image = InputImage.fromFilePath(this, imageUri);
-            textRecognizer.process(image)
-                    .addOnSuccessListener(visionText -> {
-                        if (isFinishing()) return;
-                        applyReceiptResult(ReceiptParser.parse(visionText.getText()));
-                    })
-                    .addOnFailureListener(error -> {
-                        if (!isFinishing()) {
-                            receiptPreview.setText("Não foi possível ler esta imagem. Tente uma foto mais nítida, bem iluminada e enquadrada.");
-                            Toast.makeText(this, "Falha na leitura: " + safeMessage(error), Toast.LENGTH_LONG).show();
-                        }
-                    })
-                    .addOnCompleteListener(task -> {
-                        if (!isFinishing()) receiptButton.setEnabled(true);
-                    });
+            InputImage image = InputImage.fromFilePath(this, uri);
+            textRecognizer.process(image).addOnSuccessListener(visionText -> {
+                if (!isFinishing()) applyReceiptResult(ReceiptParser.parse(visionText.getText()));
+            }).addOnFailureListener(error -> {
+                if (!isFinishing()) receiptPreview.setText("Não consegui ler esta imagem. Tente uma foto mais nítida e bem iluminada.");
+            }).addOnCompleteListener(task -> { if (!isFinishing()) receiptButtonState(true); });
         } catch (IOException | RuntimeException ex) {
-            receiptButton.setEnabled(true);
-            receiptPreview.setText("Não foi possível abrir a imagem selecionada.");
-            Toast.makeText(this, "Erro ao abrir imagem: " + safeMessage(ex), Toast.LENGTH_LONG).show();
+            receiptButtonState(true);
+            receiptPreview.setText("Não foi possível abrir o arquivo selecionado.");
         }
     }
 
-    private void applyReceiptResult(ReceiptParser.Result result) {
-        StringBuilder preview = new StringBuilder();
-        if (result.hasAmount) {
-            preview.append("Valor total sugerido: R$ ")
-                    .append(BrazilianMoney.formatCents(result.amountCents))
-                    .append("\nConfiança da seleção: ").append(result.confidence)
-                    .append(" · confira antes de salvar\nLinha identificada: ")
-                    .append(result.selectedLine).append("\n\n");
-            amountInput.setText(BrazilianMoney.formatCents(result.amountCents));
-            // A nota importada normalmente representa uma compra. O usuário ainda pode alterar o tipo.
-            kindInput.setSelection(1);
+    private void receiptButtonState(boolean enabled) {
+        // Keep both entry points available while the asynchronous OCR is running.
+        if (receiptButton != null) receiptButton.setEnabled(enabled);
+    }
+
+    private void applyReceiptResult(ReceiptParser.Result r) {
+        StringBuilder out = new StringBuilder();
+        if (r.hasAmount) {
+            amountInput.setText(BrazilianMoney.formatCents(r.amountCents));
+            out.append("VALOR IDENTIFICADO\nR$ ").append(BrazilianMoney.formatCents(r.amountCents))
+                    .append("  •  Confiança ").append(r.confidence)
+                    .append("\nLinha: ").append(r.selectedLine)
+                    .append("\nCategoria sugerida: ").append(r.suggestedKind)
+                    .append("\n\nConfira o valor e a categoria antes de salvar.\n\n");
+            String[] kinds = {BUSINESS_REVENUE, BUSINESS_EXPENSE, PERSONAL_REVENUE, PERSONAL_EXPENSE, CONTRIBUTION, BUSINESS_EXPENSE_PERSONAL, TRANSFER};
+            for (int i = 0; i < kinds.length; i++) if (kinds[i].equals(r.suggestedKind)) kindInput.setSelection(i);
         } else {
-            preview.append("Não encontrei um total com confiança suficiente. Digite o valor manualmente e confira o texto reconhecido.\n\n");
+            out.append("Não encontrei um total confiável. Preencha o valor manualmente e confira o texto abaixo.\n\n");
         }
-        if (result.description != null && !result.description.isEmpty()
-                && (descriptionInput.getText() == null || descriptionInput.getText().toString().trim().isEmpty())) {
-            descriptionInput.setText(result.description);
-        }
-        preview.append("Texto reconhecido:\n");
-        String raw = result.rawText == null ? "" : result.rawText.trim();
-        if (raw.length() > 1800) raw = raw.substring(0, 1800) + "\n[texto restante omitido na prévia]";
-        preview.append(raw.isEmpty() ? "Nenhum texto legível encontrado." : raw);
-        receiptPreview.setText(preview.toString());
+        if (r.description != null && !r.description.isEmpty()) descriptionInput.setText(r.description);
+        String raw = r.rawText == null ? "" : r.rawText.trim();
+        if (raw.length() > 1400) raw = raw.substring(0, 1400) + "\n[prévia reduzida]";
+        out.append("TEXTO RECONHECIDO\n").append(raw.isEmpty() ? "Nenhum texto legível." : raw);
+        receiptPreview.setText(out.toString());
     }
 
     private void saveEntry() {
         String description = descriptionInput.getText().toString().trim();
-        String rawAmount = amountInput.getText().toString().trim();
-        if (description.isEmpty()) {
-            Toast.makeText(this, "Informe uma descrição", Toast.LENGTH_LONG).show();
-            return;
-        }
+        if (description.isEmpty()) { descriptionInput.setError("Informe uma descrição"); return; }
         final long cents;
-        try {
-            cents = BrazilianMoney.parseToCents(rawAmount);
-        } catch (IllegalArgumentException ex) {
-            Toast.makeText(this, "Informe um valor válido, por exemplo 12,50 ou 1.234,56", Toast.LENGTH_LONG).show();
-            return;
-        }
-
-        String kind = String.valueOf(kindInput.getSelectedItem());
+        try { cents = BrazilianMoney.parseToCents(amountInput.getText().toString()); }
+        catch (IllegalArgumentException ex) { amountInput.setError("Use 12,50 ou 1.234,56"); return; }
         ContentValues values = new ContentValues();
-        values.put("kind", kind);
+        values.put("kind", String.valueOf(kindInput.getSelectedItem()));
         values.put("amount", cents);
         values.put("description", description);
         try {
             db.insertOrThrow("entries", null, values);
-            amountInput.setText("");
-            descriptionInput.setText("");
-            receiptPreview.setText("");
-            kindInput.setSelection(0);
+            amountInput.setText(""); descriptionInput.setText(""); kindInput.setSelection(0);
+            receiptPreview.setText("Lançamento salvo. Importe outro documento ou registre uma nova movimentação.");
             refreshSummary();
-            Toast.makeText(this, "Lançamento salvo", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Lançamento salvo.", Toast.LENGTH_SHORT).show();
         } catch (RuntimeException ex) {
-            Toast.makeText(this, "Não foi possível salvar o lançamento", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Não foi possível salvar o lançamento.", Toast.LENGTH_LONG).show();
         }
     }
 
     private void refreshSummary() {
-        long businessRevenue = sumForKind(KIND_BUSINESS_REVENUE);
-        long businessExpenses = safeAdd(sumForKind(KIND_BUSINESS_EXPENSE),
-                sumForKind(KIND_BUSINESS_EXPENSE_PERSONAL));
-        long personalRevenue = sumForKind(KIND_PERSONAL_REVENUE);
-        long personalExpenses = sumForKind(KIND_PERSONAL_EXPENSE);
-        long contributions = sumForKind(KIND_CAPITAL_CONTRIBUTION);
-        long operatingResult = businessRevenue - businessExpenses;
-
-        StringBuilder text = new StringBuilder();
-        text.append("RESUMO EMPRESARIAL\n")
-                .append("Faturamento bruto: ").append(formatMoney(businessRevenue)).append("\n")
-                .append("Despesas da empresa: ").append(formatMoney(businessExpenses)).append("\n")
-                .append("Resultado dos lançamentos: ").append(formatMoney(operatingResult)).append("\n\n")
-                .append("RESUMO PESSOAL\n")
-                .append("Receitas pessoais: ").append(formatMoney(personalRevenue)).append("\n")
-                .append("Despesas pessoais: ").append(formatMoney(personalExpenses)).append("\n\n")
-                .append("MOVIMENTAÇÕES FORA DO FATURAMENTO\n")
-                .append("Aportes pessoais: ").append(formatMoney(contributions)).append("\n")
-                .append("Transferências entre contas próprias não entram como receita ou despesa.\n\n")
-                .append("TOTAIS POR CATEGORIA\n");
-
-        Cursor cursor = db.rawQuery("SELECT kind, COALESCE(SUM(amount), 0) FROM entries GROUP BY kind ORDER BY kind", null);
-        boolean hasEntries = false;
-        try {
-            while (cursor.moveToNext()) {
-                hasEntries = true;
-                text.append(cursor.getString(0)).append(": ")
-                        .append(formatMoney(cursor.getLong(1))).append("\n");
-            }
-        } finally {
-            cursor.close();
-        }
-        if (!hasEntries) text.append("Nenhum lançamento cadastrado.\n");
-        summary.setText(text.toString());
+        long revenue = sum(BUSINESS_REVENUE);
+        long expenses = safeAdd(sum(BUSINESS_EXPENSE), sum(BUSINESS_EXPENSE_PERSONAL));
+        long personalIncome = sum(PERSONAL_REVENUE);
+        long personalOut = sum(PERSONAL_EXPENSE);
+        long contribution = sum(CONTRIBUTION);
+        long result = revenue - expenses;
+        businessRevenueView.setText(money(revenue));
+        expenseView.setText(money(expenses));
+        resultView.setText(money(result));
+        summary.setText("PESSOAL\nReceitas: " + money(personalIncome) + "    Despesas: " + money(personalOut)
+                + "\n\nAPORTES\nAportes pessoais: " + money(contribution)
+                + "\nTransferências entre contas próprias ficam fora do faturamento."
+                + "\n\nResultado empresarial = faturamento lançado − despesas empresariais lançadas."
+                + "\nEste resumo não substitui conciliação bancária ou apuração fiscal.");
     }
 
-    private long sumForKind(String kind) {
-        Cursor cursor = db.rawQuery("SELECT COALESCE(SUM(amount), 0) FROM entries WHERE kind = ?",
-                new String[]{kind});
-        try {
-            return cursor.moveToFirst() ? cursor.getLong(0) : 0L;
-        } finally {
-            cursor.close();
-        }
+    private long sum(String kind) {
+        Cursor c = db.rawQuery("SELECT COALESCE(SUM(amount),0) FROM entries WHERE kind=?", new String[]{kind});
+        try { return c.moveToFirst() ? c.getLong(0) : 0L; } finally { c.close(); }
     }
+    private long safeAdd(long a, long b) { try { return Math.addExact(a, b); } catch (ArithmeticException e) { return Long.MAX_VALUE; } }
+    private String money(long cents) { return "R$ " + BrazilianMoney.formatCents(cents); }
 
-    private long safeAdd(long first, long second) {
-        try {
-            return Math.addExact(first, second);
-        } catch (ArithmeticException ex) {
-            return first >= 0 ? Long.MAX_VALUE : Long.MIN_VALUE;
-        }
+    private TextView text(String value, int size, int color, boolean bold) {
+        TextView t = new TextView(this); t.setText(value); t.setTextSize(size); t.setTextColor(color);
+        if (bold) t.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        return t;
     }
-
-    private String formatMoney(long cents) {
-        return "R$ " + BrazilianMoney.formatCents(cents);
+    private LinearLayout card(int color) {
+        LinearLayout l = new LinearLayout(this); l.setOrientation(LinearLayout.VERTICAL);
+        GradientDrawable bg = new GradientDrawable(); bg.setColor(color); bg.setCornerRadius(dp(18));
+        l.setBackground(bg); l.setElevation(dp(2)); return l;
     }
-
-    private String safeMessage(Exception error) {
-        String message = error.getMessage();
-        return message == null || message.trim().isEmpty() ? "erro desconhecido" : message;
+    private EditText field(String hint, int inputType) {
+        EditText e = new EditText(this); e.setSingleLine(true); e.setTextSize(14); e.setHint(hint);
+        e.setInputType(inputType); e.setPadding(dp(12), dp(10), dp(12), dp(10));
+        GradientDrawable bg = new GradientDrawable(); bg.setColor(Color.rgb(247,248,252));
+        bg.setCornerRadius(dp(11)); bg.setStroke(dp(1), Color.rgb(230,233,241)); e.setBackground(bg);
+        return e;
     }
-
-    private LinearLayout.LayoutParams matchWidth() {
-        return new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT);
+    private Button button(String label, int color) {
+        Button b = new Button(this); b.setText(label); b.setTextSize(13); b.setAllCaps(false);
+        b.setTypeface(Typeface.DEFAULT, Typeface.BOLD); b.setTextColor(color == Color.rgb(230,231,250) ? PRIMARY : Color.WHITE);
+        GradientDrawable bg = new GradientDrawable(); bg.setColor(color); bg.setCornerRadius(dp(13)); b.setBackground(bg);
+        b.setPadding(dp(8), 0, dp(8), 0); return b;
     }
-
-    private int dp(int value) {
-        return Math.round(value * getResources().getDisplayMetrics().density);
+    private LinearLayout.LayoutParams margin(int left, int top, int right, int bottom) {
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2);
+        p.setMargins(dp(left), dp(top), dp(right), dp(bottom)); return p;
     }
+    private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
 
-    @Override
-    protected void onDestroy() {
+    @Override protected void onDestroy() {
         if (textRecognizer != null) textRecognizer.close();
         if (db != null && db.isOpen()) db.close();
         super.onDestroy();

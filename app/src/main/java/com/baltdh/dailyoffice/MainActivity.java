@@ -15,6 +15,8 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Build;
 import android.text.InputType;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -63,6 +65,11 @@ public class MainActivity extends Activity {
     private EditText descriptionInput, amountInput;
     private Spinner kindInput;
     private Button receiptButton;
+    private EditText searchInput;
+    private String historyFilter = "Todos";
+    private TextView pendingView, receivableView, personalExpensesView, meiUsedView, meiRemainingView, archivedCountView;
+    private View meiProgressView;
+    private static final long MEI_PERIOD_LIMIT_CENTS = 3375000L;
     private TextRecognizer textRecognizer;
     private Uri cameraPhotoUri;
 
@@ -146,33 +153,39 @@ public class MainActivity extends Activity {
         subtitle.setPadding(0, 0, 0, dp(18));
         root.addView(subtitle);
 
-        LinearLayout hero = card(Color.rgb(37, 43, 83));
-        hero.setPadding(dp(18), dp(18), dp(18), dp(18));
-        TextView heroLabel = text("RESULTADO EMPRESARIAL", 11, Color.rgb(211, 214, 255), true);
-        hero.addView(heroLabel);
-        resultView = text("R$ 0,00", 29, Color.WHITE, true);
-        resultView.setPadding(0, dp(8), 0, dp(14));
-        hero.addView(resultView);
-        LinearLayout metrics = new LinearLayout(this);
-        metrics.setOrientation(LinearLayout.HORIZONTAL);
-        metrics.addView(metric("Faturamento", "R$ 0,00", true), new LinearLayout.LayoutParams(0, -2, 1));
-        metrics.addView(metric("Despesas", "R$ 0,00", false), new LinearLayout.LayoutParams(0, -2, 1));
-        hero.addView(metrics);
-        root.addView(hero, margin(0, 0, 0, 16));
+        root.addView(text("Visão geral", 22, INK, true), margin(0, 0, 0, 12));
+        LinearLayout rowOne = new LinearLayout(this); rowOne.setOrientation(LinearLayout.HORIZONTAL);
+        rowOne.addView(dashboardTile("Receitas", 0), new LinearLayout.LayoutParams(0, -2, 1));
+        rowOne.addView(dashboardTile("Despesas empresa", 1), new LinearLayout.LayoutParams(0, -2, 1));
+        root.addView(rowOne, margin(0, 0, 0, 10));
+        LinearLayout rowTwo = new LinearLayout(this); rowTwo.setOrientation(LinearLayout.HORIZONTAL);
+        rowTwo.addView(dashboardTile("Pendentes", 2), new LinearLayout.LayoutParams(0, -2, 1));
+        rowTwo.addView(dashboardTile("A receber", 3), new LinearLayout.LayoutParams(0, -2, 1));
+        root.addView(rowTwo, margin(0, 0, 0, 10));
+        root.addView(dashboardTile("Gastos pessoais identificados", 4), margin(0, 0, 0, 10));
+        LinearLayout meiCard = card(Color.WHITE); meiCard.setPadding(dp(16), dp(14), dp(16), dp(14));
+        meiCard.addView(text("Limite MEI", 17, INK, true));
+        meiUsedView = text("R$ 0,00 de R$ 33.750,00", 19, INK, true);
+        meiUsedView.setPadding(0, dp(8), 0, dp(8)); meiCard.addView(meiUsedView);
+        android.widget.ProgressBar meiBar = new android.widget.ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        meiBar.setMax(10000); meiBar.setProgress(0); meiProgressView = meiBar;
+        meiCard.addView(meiBar, new LinearLayout.LayoutParams(-1, dp(7)));
+        meiRemainingView = text("Restante: R$ 33.750,00", 14, INK, true);
+        meiRemainingView.setPadding(0, dp(8), 0, 0); meiCard.addView(meiRemainingView);
+        root.addView(meiCard, margin(0, 0, 0, 12));
+        root.addView(text("Pendências e contas a receber ainda não possuem controle próprio. O limite exibido é o valor proporcional configurado para este período.", 10, MUTED, false), margin(2, 0, 0, 14));
+
 
         TextView section = text("Lançamentos", 18, INK, true);
         root.addView(section, margin(0, 0, 0, 8));
-        LinearLayout actions = new LinearLayout(this);
-        actions.setOrientation(LinearLayout.HORIZONTAL);
-        Button choose = button("Galeria / documentos", Color.rgb(230, 231, 250));
-        choose.setTextColor(PRIMARY);
+        LinearLayout actions = new LinearLayout(this); actions.setOrientation(LinearLayout.HORIZONTAL);
+        Button choose = button("Galeria", Color.rgb(230, 231, 250)); choose.setTextColor(PRIMARY);
         choose.setOnClickListener(v -> openReceiptPicker());
-        actions.addView(choose, new LinearLayout.LayoutParams(-1, dp(48)));
-        root.addView(actions, margin(0, 0, 0, 8));
-        Button export = button("Exportar histórico (CSV)", Color.rgb(230, 231, 250));
-        export.setTextColor(PRIMARY);
+        actions.addView(choose, new LinearLayout.LayoutParams(0, dp(48), 1));
+        Button export = button("Exportar CSV", Color.rgb(230, 231, 250)); export.setTextColor(PRIMARY);
         export.setOnClickListener(v -> createCsvExport());
-        root.addView(export, margin(0, 0, 0, 8));
+        LinearLayout.LayoutParams ep = new LinearLayout.LayoutParams(0, dp(48), 1); ep.leftMargin = dp(8);
+        actions.addView(export, ep); root.addView(actions, margin(0, 0, 0, 12));
 
         TextView privacy = text("OCR no próprio aparelho • você confere antes de salvar", 11, MUTED, false);
         root.addView(privacy, margin(2, 0, 0, 12));
@@ -209,9 +222,19 @@ public class MainActivity extends Activity {
         details.addView(summary);
         root.addView(details, margin(0, 0, 0, 14));
 
-        LinearLayout history = card(Color.WHITE);
-        history.setPadding(dp(16), dp(15), dp(16), dp(15));
-        history.addView(text("Últimos lançamentos", 16, INK, true), margin(0, 0, 0, 10));
+        searchInput = field("Buscar comprovante", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        root.addView(searchInput, margin(0, 0, 0, 8));
+        LinearLayout filters = new LinearLayout(this); filters.setOrientation(LinearLayout.HORIZONTAL);
+        String[] filterNames = {"Todos", "Empresa", "Pessoal", "Mistos"};
+        for (String filter : filterNames) {
+            Button chip = button(filter, Color.rgb(230,231,250)); chip.setTextSize(11); chip.setTextColor(PRIMARY);
+            LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(0, dp(40), 1); cp.setMargins(0,0,dp(4),0);
+            filters.addView(chip, cp); chip.setOnClickListener(v -> { historyFilter = filter; refreshHistory(); });
+        }
+        root.addView(filters, margin(0, 0, 0, 12));
+        LinearLayout history = card(Color.WHITE); history.setPadding(dp(16), dp(15), dp(16), dp(15));
+        archivedCountView = text("Comprovantes arquivados (0)", 18, INK, true);
+        history.addView(archivedCountView, margin(0, 0, 0, 10));
         historyContainer = new LinearLayout(this);
         historyContainer.setOrientation(LinearLayout.VERTICAL);
         history.addView(historyContainer);
@@ -391,29 +414,49 @@ public class MainActivity extends Activity {
         long result = revenue - expenses;
         businessRevenueView.setText(money(revenue));
         expenseView.setText(money(expenses));
+        personalExpensesView.setText(money(personalOut));
         resultView.setText(money(result));
-        summary.setText("PESSOAL\nReceitas: " + money(personalIncome) + "    Despesas: " + money(personalOut)
-                + "\n\nAPORTES\nAportes pessoais: " + money(contribution)
-                + "\nTransferências entre contas próprias ficam fora do faturamento."
-                + "\n\nResultado empresarial = faturamento lançado − despesas empresariais lançadas."
-                + "\nEste resumo não substitui conciliação bancária ou apuração fiscal.");
+        long remaining = Math.max(0L, MEI_PERIOD_LIMIT_CENTS - revenue);
+        meiUsedView.setText(money(revenue) + " de " + money(MEI_PERIOD_LIMIT_CENTS));
+        meiRemainingView.setText("Restante: " + money(remaining));
+        if (meiProgressView instanceof android.widget.ProgressBar) {
+            int progress = (int)Math.min(10000L, revenue * 10000L / MEI_PERIOD_LIMIT_CENTS);
+            ((android.widget.ProgressBar)meiProgressView).setProgress(progress);
+        }
+        summary.setText("PESSOAL\\nReceitas: " + money(personalIncome) + "    Despesas: " + money(personalOut)
+                + "\\n\\nAPORTES\\nAportes pessoais: " + money(contribution)
+                + "\\nTransferências entre contas próprias ficam fora do faturamento."
+                + "\\n\\nResultado empresarial = faturamento lançado − despesas empresariais lançadas."
+                + "\\nEste resumo não substitui conciliação bancária ou apuração fiscal.");
         refreshHistory();
     }
 
     private void refreshHistory() {
         if (historyContainer == null) return;
         historyContainer.removeAllViews();
-        Cursor c = db.rawQuery("SELECT id,kind,amount,description,created_at FROM entries ORDER BY id DESC LIMIT 20", null);
+        Cursor c = db.rawQuery("SELECT id,kind,amount,description,created_at FROM entries ORDER BY id DESC", null);
+        int shown = 0;
+        String query = searchInput == null ? "" : searchInput.getText().toString().trim().toLowerCase(java.util.Locale.ROOT);
         try {
             if (!c.moveToFirst()) {
+                archivedCountView.setText("Comprovantes arquivados (0)");
                 historyContainer.addView(text("Nenhum lançamento registrado ainda.", 13, MUTED, false));
                 return;
             }
             do {
-                long id = c.getLong(0);
                 String kind = c.getString(1);
-                long amount = c.getLong(2);
                 String description = c.getString(3);
+                boolean business = kind.equals(BUSINESS_REVENUE) || kind.equals(BUSINESS_EXPENSE) || kind.equals(BUSINESS_EXPENSE_PERSONAL);
+                boolean personal = kind.equals(PERSONAL_REVENUE) || kind.equals(PERSONAL_EXPENSE) || kind.equals(CONTRIBUTION);
+                boolean matchesFilter = historyFilter.equals("Todos") || (historyFilter.equals("Empresa") && business)
+                        || (historyFilter.equals("Pessoal") && personal) || (historyFilter.equals("Mistos") && kind.equals(TRANSFER));
+                boolean matchesQuery = query.isEmpty() || description.toLowerCase(java.util.Locale.ROOT).contains(query)
+                        || kind.toLowerCase(java.util.Locale.ROOT).contains(query);
+                if (!matchesFilter || !matchesQuery) continue;
+                if (shown >= 20) break;
+                shown++;
+                long id = c.getLong(0);
+                long amount = c.getLong(2);
                 long createdAt = c.getLong(4);
                 LinearLayout row = new LinearLayout(this);
                 row.setGravity(Gravity.CENTER_VERTICAL);
@@ -430,12 +473,14 @@ public class MainActivity extends Activity {
                 remove.setOnClickListener(v -> confirmDelete(id, description));
                 row.addView(remove, new LinearLayout.LayoutParams(-2, dp(38)));
                 historyContainer.addView(row, margin(0, 0, 0, 8));
-                if (c.getPosition() < c.getCount() - 1) {
+                if (shown < 20) {
                     View divider = new View(this);
                     divider.setBackgroundColor(Color.rgb(235, 237, 243));
                     historyContainer.addView(divider, new LinearLayout.LayoutParams(-1, dp(1)));
                 }
             } while (c.moveToNext());
+            archivedCountView.setText("Comprovantes arquivados (" + shown + ")");
+            if (shown == 0) historyContainer.addView(text("Nenhum resultado encontrado.", 13, MUTED, false));
         } finally {
             c.close();
         }

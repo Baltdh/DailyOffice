@@ -246,6 +246,11 @@ public class MainActivity extends Activity {
         historyContainer.setOrientation(LinearLayout.VERTICAL);
         history.addView(historyContainer);
         root.addView(history);
+        searchInput.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) { refreshHistory(); }
+            @Override public void afterTextChanged(Editable e) {}
+        });
     }
 
     private View metric(String label, String initial, boolean primary) {

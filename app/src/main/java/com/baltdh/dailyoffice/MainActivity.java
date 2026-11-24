@@ -4,6 +4,8 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ContentValues;
 import android.content.Intent;
+import android.provider.MediaStore;
+import androidx.core.content.FileProvider;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.graphics.Color;
@@ -31,6 +33,7 @@ import com.google.mlkit.vision.text.TextRecognizer;
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions;
 
 import java.io.IOException;
+import java.io.File;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
@@ -38,6 +41,7 @@ import java.nio.charset.StandardCharsets;
 public class MainActivity extends Activity {
     private static final int REQUEST_RECEIPT_IMAGE = 431;
     private static final int REQUEST_EXPORT_CSV = 432;
+    private static final int REQUEST_CAPTURE_PHOTO = 433;
     private static final String BUSINESS_REVENUE = "Receita empresarial";
     private static final String BUSINESS_EXPENSE = "Despesa empresarial";
     private static final String PERSONAL_REVENUE = "Receita pessoal";
@@ -59,6 +63,7 @@ public class MainActivity extends Activity {
     private Spinner kindInput;
     private Button receiptButton;
     private TextRecognizer textRecognizer;
+    private Uri cameraPhotoUri;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -140,19 +145,16 @@ public class MainActivity extends Activity {
         root.addView(section, margin(0, 0, 0, 8));
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
-        Button scan = button("Ler documento", PRIMARY);
-        receiptButton = scan;
-        scan.setOnClickListener(v -> openReceiptPicker());
-        actions.addView(scan, new LinearLayout.LayoutParams(0, dp(50), 1));
-        Button manual = button("Novo manual", Color.rgb(230, 231, 250));
-        manual.setTextColor(PRIMARY);
-        manual.setOnClickListener(v -> {
-            descriptionInput.requestFocus();
-            Toast.makeText(this, "Preencha os dados do lançamento abaixo.", Toast.LENGTH_SHORT).show();
-        });
-        LinearLayout.LayoutParams manualParams = new LinearLayout.LayoutParams(0, dp(50), 1);
-        manualParams.leftMargin = dp(9);
-        actions.addView(manual, manualParams);
+        Button camera = button("Tirar foto", PRIMARY);
+        receiptButton = camera;
+        camera.setOnClickListener(v -> captureReceiptPhoto());
+        actions.addView(camera, new LinearLayout.LayoutParams(0, dp(50), 1));
+        Button choose = button("Escolher imagem", Color.rgb(230, 231, 250));
+        choose.setTextColor(PRIMARY);
+        choose.setOnClickListener(v -> openReceiptPicker());
+        LinearLayout.LayoutParams chooseParams = new LinearLayout.LayoutParams(0, dp(50), 1);
+        chooseParams.leftMargin = dp(9);
+        actions.addView(choose, chooseParams);
         root.addView(actions, margin(0, 0, 0, 8));
         Button export = button("Exportar histórico (CSV)", Color.rgb(230, 231, 250));
         export.setTextColor(PRIMARY);
@@ -182,7 +184,7 @@ public class MainActivity extends Activity {
         LinearLayout review = card(Color.WHITE);
         review.setPadding(dp(14), dp(14), dp(14), dp(14));
         review.addView(text("Leitura do documento", 15, INK, true));
-        receiptPreview = text("Nenhum documento importado. Toque em “Ler documento” para começar.", 12, MUTED, false);
+        receiptPreview = text("Nenhum documento importado. Tire uma foto ou escolha uma imagem para começar.", 12, MUTED, false);
         receiptPreview.setPadding(0, dp(8), 0, 0);
         review.addView(receiptPreview);
         root.addView(review, margin(0, 0, 0, 14));
@@ -213,6 +215,24 @@ public class MainActivity extends Activity {
         return box;
     }
 
+    private void captureReceiptPhoto() {
+        try {
+            File photo = File.createTempFile("dailyoffice_receipt_", ".jpg", getCacheDir());
+            cameraPhotoUri = FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", photo);
+            Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+            intent.putExtra(MediaStore.EXTRA_OUTPUT, cameraPhotoUri);
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            if (intent.resolveActivity(getPackageManager()) == null) {
+                Toast.makeText(this, "Nenhum aplicativo de câmera disponível.", Toast.LENGTH_LONG).show();
+                return;
+            }
+            startActivityForResult(intent, REQUEST_CAPTURE_PHOTO);
+        } catch (IOException | RuntimeException ex) {
+            cameraPhotoUri = null;
+            Toast.makeText(this, "Não foi possível preparar a captura da foto.", Toast.LENGTH_LONG).show();
+        }
+    }
+
     private void openReceiptPicker() {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
@@ -227,10 +247,20 @@ public class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
-        if (requestCode == REQUEST_EXPORT_CSV) { writeCsvExport(data.getData()); return; }
-        if (requestCode != REQUEST_RECEIPT_IMAGE) return;
-        Uri uri = data.getData();
+        if (requestCode == REQUEST_EXPORT_CSV) {
+            if (resultCode == RESULT_OK && data != null && data.getData() != null) writeCsvExport(data.getData());
+            return;
+        }
+        if (requestCode == REQUEST_CAPTURE_PHOTO) {
+            if (resultCode != RESULT_OK || cameraPhotoUri == null) return;
+            processReceiptImage(cameraPhotoUri);
+            return;
+        }
+        if (requestCode != REQUEST_RECEIPT_IMAGE || resultCode != RESULT_OK || data == null || data.getData() == null) return;
+        processReceiptImage(data.getData());
+    }
+
+    private void processReceiptImage(Uri uri) {
         receiptPreview.setText("Analisando o documento…");
         receiptButtonState(false);
         try {

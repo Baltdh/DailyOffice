@@ -2,31 +2,35 @@
 
 Aplicativo Android de controle financeiro pessoal e empresarial, com foco em microempreendedores.
 
-## Situação do repositório
-Este repositório foi iniciado apenas com um README. O código Android ainda precisa ser implementado e compilado.
+## Versão 0.2.0 — leitura de comprovantes e apuração
 
-## Escopo da primeira versão (MVP)
-- Lançamentos de receitas, despesas, transferências e aportes.
-- Separação entre contas pessoais e empresariais.
-- Registro de despesas empresariais pagas com recursos pessoais, sem confundi-las com consumo pessoal.
-- Anexo de fotos de comprovantes e consulta posterior.
-- Contas a pagar e a receber, com status pendente/pago.
-- Painel de faturamento bruto e acompanhamento do limite MEI proporcional ao ano de abertura.
-- Exportação e importação de backup local.
+- Importação de foto de nota fiscal ou comprovante pela galeria/arquivos.
+- OCR local com Google ML Kit (modelo Latin empacotado no APK): a imagem e o texto não são enviados a um servidor pelo recurso de leitura.
+- Identificação contextual do total a pagar, valor total, total geral e valor pago; subtotal, desconto, tributos, CPF/CNPJ, datas e troco recebem tratamento para reduzir falsos positivos.
+- Prévia do texto reconhecido, linha usada e nível heurístico de confiança.
+- O valor sugerido não é salvo automaticamente: o usuário confere e pode editar descrição, valor e categoria.
+- Valores armazenados como centavos inteiros e analisados com BigDecimal, sem somas monetárias em double.
+- Resumo separado de faturamento empresarial, despesas empresariais, resultado dos lançamentos e movimentações pessoais.
+- Aportes pessoais e transferências entre contas próprias não entram no faturamento.
 
 ## Regras financeiras
-- Faturamento bruto não é lucro e não depende de recebimento do repasse.
-- Transferências entre contas próprias não representam receita.
+
+- Faturamento bruto não é lucro e não depende do recebimento de repasse.
+- Transferências entre contas próprias não representam receita ou despesa.
 - Aporte pessoal na empresa não representa faturamento.
-- Despesa empresarial paga pela pessoa física deve ser identificada como despesa da empresa e aporte/reembolso, conforme a operação.
-- Dados financeiros devem ser armazenados localmente, sem chaves ou comprovantes no Git.
+- Despesa empresarial paga pela pessoa física continua classificada como despesa da empresa, sem virar despesa pessoal.
+- Valores identificados por OCR são sugestões; confira o documento antes de salvar.
+- Dados financeiros permanecem no banco local do aplicativo. Não coloque chaves, notas ou comprovantes no Git.
 
-## Próximas etapas técnicas
-1. Criar projeto Android Java/Kotlin com Gradle Wrapper e CI.
-2. Implementar banco Room com migrações e testes.
-3. Implementar formulários, categorias e painel financeiro.
-4. Implementar captura de comprovantes pelo seletor de documentos/câmera e cópia privada.
-5. Validar cálculos, exportação, restauração e permissões.
-6. Gerar APK de teste em GitHub Actions e validar instalação.
+## Tecnologia e validação
 
-Nenhum APK foi produzido nesta etapa.
+- Android nativo em Java; minSdk 26, targetSdk 35.
+- Google ML Kit Text Recognition com modelo Latin empacotado para disponibilidade imediata e leitura offline.
+- Testes unitários para formatos monetários brasileiros e seleção de totais em notas simuladas.
+- GitHub Actions executa testDebugUnitTest e assembleDebug.
+
+## Limitações conhecidas
+
+- O OCR depende da nitidez, iluminação, enquadramento e resolução da foto.
+- A versão atual recebe imagens (image/*); PDF e documentos fiscais eletrônicos estruturados ainda não são importados diretamente.
+- O parser usa regras contextuais e não substitui conferência humana nem validação fiscal.

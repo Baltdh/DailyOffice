@@ -53,6 +53,17 @@ public class ReceiptParserTest {
         assertEquals("Recebimento de férias / salário", r.description);
     }
 
+    @Test public void ignoresPurchaseWithOnlyTaxAndIdentificationValues() {
+        ReceiptParser.Result r = ReceiptParser.parse("CUPOM FISCAL\\nCNPJ 12.345.678/0001-90\\nDATA 24/11/2026\\nICMS 2,50\\nDESCONTO 5,00");
+        assertFalse(r.hasAmount);
+    }
+
+    @Test public void selectsPaidTotalAndDoesNotChooseChange() {
+        ReceiptParser.Result r = ReceiptParser.parse("LOJA EXEMPLO\\nTOTAL PAGO R$ 89,90\\nTROCO R$ 10,10");
+        assertTrue(r.hasAmount);
+        assertEquals(8990L, r.amountCents);
+    }
+
     @Test public void payrollPrefersNetWhenGrossAndDiscountsAreAlsoPresent() {
         String sample = "DEMONSTRATIVO DE PAGAMENTO\nPROVENTOS 1.500,00\nTOTAL DOS PROVENTOS 1.500,00\n" +
                 "DESCONTOS 120,00\nTOTAL DOS DESCONTOS 120,00\nTOTAL LIQUIDO 1.380,00";

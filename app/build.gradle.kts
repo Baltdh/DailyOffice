@@ -18,6 +18,7 @@ android {
 }
 
 dependencies {
+    implementation("androidx.core:core:1.15.0")
     // Bundled model: OCR is available immediately and works offline after installation.
     implementation("com.google.mlkit:text-recognition:16.0.1")
     testImplementation("junit:junit:4.13.2")

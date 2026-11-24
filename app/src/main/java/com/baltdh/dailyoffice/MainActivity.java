@@ -1,6 +1,7 @@
 package com.baltdh.dailyoffice;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.ContentValues;
 import android.content.Intent;
 import android.database.Cursor;
@@ -48,6 +49,7 @@ public class MainActivity extends Activity {
 
     private SQLiteDatabase db;
     private TextView summary, businessRevenueView, expenseView, resultView, receiptPreview;
+    private LinearLayout historyContainer;
     private EditText descriptionInput, amountInput;
     private Spinner kindInput;
     private Button receiptButton;
@@ -150,7 +152,15 @@ public class MainActivity extends Activity {
         details.addView(text("Visão geral", 16, INK, true), margin(0, 0, 0, 8));
         summary = text("Sem lançamentos.", 13, MUTED, false);
         details.addView(summary);
-        root.addView(details);
+        root.addView(details, margin(0, 0, 0, 14));
+
+        LinearLayout history = card(Color.WHITE);
+        history.setPadding(dp(16), dp(15), dp(16), dp(15));
+        history.addView(text("Últimos lançamentos", 16, INK, true), margin(0, 0, 0, 10));
+        historyContainer = new LinearLayout(this);
+        historyContainer.setOrientation(LinearLayout.VERTICAL);
+        history.addView(historyContainer);
+        root.addView(history);
     }
 
     private View metric(String label, String initial, boolean primary) {
@@ -256,6 +266,59 @@ public class MainActivity extends Activity {
                 + "\nTransferências entre contas próprias ficam fora do faturamento."
                 + "\n\nResultado empresarial = faturamento lançado − despesas empresariais lançadas."
                 + "\nEste resumo não substitui conciliação bancária ou apuração fiscal.");
+        refreshHistory();
+    }
+
+    private void refreshHistory() {
+        if (historyContainer == null) return;
+        historyContainer.removeAllViews();
+        Cursor c = db.rawQuery("SELECT id,kind,amount,description FROM entries ORDER BY id DESC LIMIT 20", null);
+        try {
+            if (!c.moveToFirst()) {
+                historyContainer.addView(text("Nenhum lançamento registrado ainda.", 13, MUTED, false));
+                return;
+            }
+            do {
+                long id = c.getLong(0);
+                String kind = c.getString(1);
+                long amount = c.getLong(2);
+                String description = c.getString(3);
+                LinearLayout row = new LinearLayout(this);
+                row.setGravity(Gravity.CENTER_VERTICAL);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                LinearLayout info = new LinearLayout(this);
+                info.setOrientation(LinearLayout.VERTICAL);
+                info.addView(text(description, 14, INK, true));
+                info.addView(text(kind + "  •  " + money(amount), 11, MUTED, false));
+                row.addView(info, new LinearLayout.LayoutParams(0, -2, 1));
+                Button remove = button("Excluir", Color.rgb(252, 235, 237));
+                remove.setTextColor(Color.rgb(176, 55, 70));
+                remove.setTextSize(11);
+                remove.setOnClickListener(v -> confirmDelete(id, description));
+                row.addView(remove, new LinearLayout.LayoutParams(-2, dp(38)));
+                historyContainer.addView(row, margin(0, 0, 0, 8));
+                if (c.getPosition() < c.getCount() - 1) {
+                    View divider = new View(this);
+                    divider.setBackgroundColor(Color.rgb(235, 237, 243));
+                    historyContainer.addView(divider, new LinearLayout.LayoutParams(-1, dp(1)));
+                }
+            } while (c.moveToNext());
+        } finally {
+            c.close();
+        }
+    }
+
+    private void confirmDelete(long id, String description) {
+        new AlertDialog.Builder(this)
+                .setTitle("Excluir lançamento?")
+                .setMessage("O registro \"" + description + "\" será removido e os totais serão atualizados.")
+                .setNegativeButton("Cancelar", (dialog, which) -> dialog.dismiss())
+                .setPositiveButton("Excluir", (dialog, which) -> {
+                    db.delete("entries", "id=?", new String[]{String.valueOf(id)});
+                    refreshSummary();
+                    Toast.makeText(this, "Lançamento excluído.", Toast.LENGTH_SHORT).show();
+                })
+                .show();
     }
 
     private long sum(String kind) {

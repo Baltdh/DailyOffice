@@ -54,12 +54,12 @@ public class ReceiptParserTest {
     }
 
     @Test public void ignoresPurchaseWithOnlyTaxAndIdentificationValues() {
-        ReceiptParser.Result r = ReceiptParser.parse("CUPOM FISCAL\\nCNPJ 12.345.678/0001-90\\nDATA 24/11/2026\\nICMS 2,50\\nDESCONTO 5,00");
+        ReceiptParser.Result r = ReceiptParser.parse("CUPOM FISCAL\nCNPJ 12.345.678/0001-90\nDATA 24/11/2026\nICMS 2,50\nDESCONTO 5,00");
         assertFalse(r.hasAmount);
     }
 
     @Test public void selectsPaidTotalAndDoesNotChooseChange() {
-        ReceiptParser.Result r = ReceiptParser.parse("LOJA EXEMPLO\\nTOTAL PAGO R$ 89,90\\nTROCO R$ 10,10");
+        ReceiptParser.Result r = ReceiptParser.parse("LOJA EXEMPLO\nTOTAL PAGO R$ 89,90\nTROCO R$ 10,10");
         assertTrue(r.hasAmount);
         assertEquals(8990L, r.amountCents);
     }

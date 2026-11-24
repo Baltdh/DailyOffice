@@ -67,9 +67,24 @@ public class MainActivity extends Activity {
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
         db = openOrCreateDatabase("dailyoffice.db", MODE_PRIVATE, null);
         db.execSQL("CREATE TABLE IF NOT EXISTS entries(id INTEGER PRIMARY KEY AUTOINCREMENT,kind TEXT NOT NULL,amount INTEGER NOT NULL,description TEXT NOT NULL)");
+        ensureCreatedAtColumn();
         textRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
         buildScreen();
         refreshSummary();
+    }
+
+    /** Adds the timestamp column without rebuilding or deleting existing user records. */
+    private void ensureCreatedAtColumn() {
+        boolean found = false;
+        Cursor columns = db.rawQuery("PRAGMA table_info(entries)", null);
+        try {
+            while (columns.moveToNext()) {
+                if ("created_at".equals(columns.getString(1))) { found = true; break; }
+            }
+        } finally {
+            columns.close();
+        }
+        if (!found) db.execSQL("ALTER TABLE entries ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0");
     }
 
     private void buildScreen() {
@@ -267,6 +282,7 @@ public class MainActivity extends Activity {
         values.put("kind", String.valueOf(kindInput.getSelectedItem()));
         values.put("amount", cents);
         values.put("description", description);
+        values.put("created_at", System.currentTimeMillis());
         try {
             db.insertOrThrow("entries", null, values);
             amountInput.setText(""); descriptionInput.setText(""); kindInput.setSelection(0);
@@ -299,16 +315,18 @@ public class MainActivity extends Activity {
             try (OutputStream output = stream;
                  OutputStreamWriter writer = new OutputStreamWriter(output, StandardCharsets.UTF_8)) {
                 writer.write("\uFEFF");
-                writer.write("ID;Categoria;Valor (R$);Descrição\r\n");
-                c = db.rawQuery("SELECT id,kind,amount,description FROM entries ORDER BY id ASC", null);
+                writer.write("ID;Data e hora;Categoria;Valor (R$);Descrição\r\n");
+                c = db.rawQuery("SELECT id,created_at,kind,amount,description FROM entries ORDER BY id ASC", null);
                 while (c.moveToNext()) {
                     writer.write(String.valueOf(c.getLong(0)));
                     writer.write(';');
-                    writer.write(CsvUtils.escape(c.getString(1)));
+                    writer.write(c.getLong(1) > 0 ? CsvUtils.escape(EntryDate.format(c.getLong(1))) : "");
                     writer.write(';');
-                    writer.write(CsvUtils.escape(BrazilianMoney.formatCents(c.getLong(2))));
+                    writer.write(CsvUtils.escape(c.getString(2)));
                     writer.write(';');
-                    writer.write(CsvUtils.escape(c.getString(3)));
+                    writer.write(CsvUtils.escape(BrazilianMoney.formatCents(c.getLong(3))));
+                    writer.write(';');
+                    writer.write(CsvUtils.escape(c.getString(4)));
                     writer.write("\r\n");
                 }
                 writer.flush();
@@ -342,7 +360,7 @@ public class MainActivity extends Activity {
     private void refreshHistory() {
         if (historyContainer == null) return;
         historyContainer.removeAllViews();
-        Cursor c = db.rawQuery("SELECT id,kind,amount,description FROM entries ORDER BY id DESC LIMIT 20", null);
+        Cursor c = db.rawQuery("SELECT id,kind,amount,description,created_at FROM entries ORDER BY id DESC LIMIT 20", null);
         try {
             if (!c.moveToFirst()) {
                 historyContainer.addView(text("Nenhum lançamento registrado ainda.", 13, MUTED, false));
@@ -353,6 +371,7 @@ public class MainActivity extends Activity {
                 String kind = c.getString(1);
                 long amount = c.getLong(2);
                 String description = c.getString(3);
+                long createdAt = c.getLong(4);
                 LinearLayout row = new LinearLayout(this);
                 row.setGravity(Gravity.CENTER_VERTICAL);
                 row.setOrientation(LinearLayout.HORIZONTAL);
@@ -360,6 +379,7 @@ public class MainActivity extends Activity {
                 info.setOrientation(LinearLayout.VERTICAL);
                 info.addView(text(description, 14, INK, true));
                 info.addView(text(kind + "  •  " + money(amount), 11, MUTED, false));
+                info.addView(text(EntryDate.formatOrUnknown(createdAt), 10, MUTED, false));
                 row.addView(info, new LinearLayout.LayoutParams(0, -2, 1));
                 Button remove = button("Excluir", Color.rgb(252, 235, 237));
                 remove.setTextColor(Color.rgb(176, 55, 70));

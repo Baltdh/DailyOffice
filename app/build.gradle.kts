@@ -12,6 +12,15 @@ android {
         versionName = "0.2.0"
     }
 
+    buildTypes {
+        getByName("debug") {
+            // Isola a versão de teste para não colidir com a instalação existente
+            // assinada por outra chave. Os dados do app já instalado são preservados.
+            applicationIdSuffix = ".teste"
+            versionNameSuffix = "-teste"
+        }
+    }
+
     testOptions {
         unitTests.isIncludeAndroidResources = false
     }

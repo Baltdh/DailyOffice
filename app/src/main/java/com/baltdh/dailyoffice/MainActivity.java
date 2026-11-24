@@ -11,6 +11,7 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Build;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
@@ -77,7 +78,23 @@ public class MainActivity extends Activity {
         scroll.setBackgroundColor(BG);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(18), dp(22), dp(18), dp(28));
+        final int baseLeft = dp(18), baseTop = dp(22), baseRight = dp(18), baseBottom = dp(28);
+        root.setPadding(baseLeft, baseTop, baseRight, baseBottom);
+        root.setOnApplyWindowInsetsListener((view, insets) -> {
+            int left, top, right, bottom;
+            if (Build.VERSION.SDK_INT >= 30) {
+                android.graphics.Insets bars = insets.getInsets(
+                        android.view.WindowInsets.Type.systemBars() | android.view.WindowInsets.Type.displayCutout());
+                left = bars.left; top = bars.top; right = bars.right; bottom = bars.bottom;
+            } else {
+                left = insets.getSystemWindowInsetLeft();
+                top = insets.getSystemWindowInsetTop();
+                right = insets.getSystemWindowInsetRight();
+                bottom = insets.getSystemWindowInsetBottom();
+            }
+            view.setPadding(baseLeft + left, baseTop + top, baseRight + right, baseBottom + bottom);
+            return insets;
+        });
         scroll.addView(root);
         setContentView(scroll);
 

@@ -30,9 +30,13 @@ import com.google.mlkit.vision.text.TextRecognizer;
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions;
 
 import java.io.IOException;
+import java.io.OutputStream;
+import java.io.OutputStreamWriter;
+import java.nio.charset.StandardCharsets;
 
 public class MainActivity extends Activity {
     private static final int REQUEST_RECEIPT_IMAGE = 431;
+    private static final int REQUEST_EXPORT_CSV = 432;
     private static final String BUSINESS_REVENUE = "Receita empresarial";
     private static final String BUSINESS_EXPENSE = "Despesa empresarial";
     private static final String PERSONAL_REVENUE = "Receita pessoal";
@@ -118,6 +122,10 @@ public class MainActivity extends Activity {
         manualParams.leftMargin = dp(9);
         actions.addView(manual, manualParams);
         root.addView(actions, margin(0, 0, 0, 8));
+        Button export = button("Exportar histórico (CSV)", Color.rgb(230, 231, 250));
+        export.setTextColor(PRIMARY);
+        export.setOnClickListener(v -> createCsvExport());
+        root.addView(export, margin(0, 0, 0, 8));
 
         TextView privacy = text("OCR no próprio aparelho • você confere antes de salvar", 11, MUTED, false);
         root.addView(privacy, margin(2, 0, 0, 12));
@@ -187,7 +195,9 @@ public class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode != REQUEST_RECEIPT_IMAGE || resultCode != RESULT_OK || data == null || data.getData() == null) return;
+        if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
+        if (requestCode == REQUEST_EXPORT_CSV) { writeCsvExport(data.getData()); return; }
+        if (requestCode != REQUEST_RECEIPT_IMAGE) return;
         Uri uri = data.getData();
         receiptPreview.setText("Analisando o documento…");
         receiptButtonState(false);
@@ -248,6 +258,49 @@ public class MainActivity extends Activity {
             Toast.makeText(this, "Lançamento salvo.", Toast.LENGTH_SHORT).show();
         } catch (RuntimeException ex) {
             Toast.makeText(this, "Não foi possível salvar o lançamento.", Toast.LENGTH_LONG).show();
+        }
+    }
+
+
+    private void createCsvExport() {
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("text/csv");
+        intent.putExtra(Intent.EXTRA_TITLE, "DailyOffice-lancamentos.csv");
+        try {
+            startActivityForResult(intent, REQUEST_EXPORT_CSV);
+        } catch (android.content.ActivityNotFoundException ex) {
+            Toast.makeText(this, "Nenhum aplicativo disponível para salvar o arquivo.", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void writeCsvExport(Uri uri) {
+        Cursor c = null;
+        try {
+            OutputStream stream = getContentResolver().openOutputStream(uri, "w");
+            if (stream == null) throw new IOException("Não foi possível abrir o destino.");
+            try (OutputStream output = stream;
+                 OutputStreamWriter writer = new OutputStreamWriter(output, StandardCharsets.UTF_8)) {
+                writer.write("\uFEFF");
+                writer.write("ID;Categoria;Valor (R$);Descrição\r\n");
+                c = db.rawQuery("SELECT id,kind,amount,description FROM entries ORDER BY id ASC", null);
+                while (c.moveToNext()) {
+                    writer.write(String.valueOf(c.getLong(0)));
+                    writer.write(';');
+                    writer.write(CsvUtils.escape(c.getString(1)));
+                    writer.write(';');
+                    writer.write(CsvUtils.escape(BrazilianMoney.formatCents(c.getLong(2))));
+                    writer.write(';');
+                    writer.write(CsvUtils.escape(c.getString(3)));
+                    writer.write("\r\n");
+                }
+                writer.flush();
+            }
+            Toast.makeText(this, "Histórico exportado em CSV.", Toast.LENGTH_LONG).show();
+        } catch (IOException | RuntimeException ex) {
+            Toast.makeText(this, "Falha ao exportar. Verifique o local escolhido e tente novamente.", Toast.LENGTH_LONG).show();
+        } finally {
+            if (c != null) c.close();
         }
     }
 

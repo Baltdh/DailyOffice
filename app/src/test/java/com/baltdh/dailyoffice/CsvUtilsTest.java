@@ -19,4 +19,11 @@ public class CsvUtilsTest {
     @Test public void nullBecomesEmptyField() {
         assertEquals("", CsvUtils.escape(null));
     }
+
+    @Test public void protectsSpreadsheetFormulaPrefixes() {
+        assertEquals("'=SUM(A1:A2)", CsvUtils.escape("=SUM(A1:A2)"));
+        assertEquals("'  +1+1", CsvUtils.escape("  +1+1"));
+        assertEquals("'-100", CsvUtils.escape("-100"));
+        assertEquals("'@SUM(A1:A2)", CsvUtils.escape("@SUM(A1:A2)"));
+    }
 }

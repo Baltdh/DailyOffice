@@ -21,6 +21,7 @@ import android.view.ViewGroup;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.Spinner;
@@ -93,12 +94,13 @@ public class MainActivity extends Activity {
     }
 
     private void buildScreen() {
+        FrameLayout screen = new FrameLayout(this);
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         scroll.setBackgroundColor(BG);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        final int baseLeft = dp(18), baseTop = dp(22), baseRight = dp(18), baseBottom = dp(28);
+        final int baseLeft = dp(18), baseTop = dp(22), baseRight = dp(18), baseBottom = dp(112);
         root.setPadding(baseLeft, baseTop, baseRight, baseBottom);
         root.setOnApplyWindowInsetsListener((view, insets) -> {
             int left, top, right, bottom;
@@ -116,7 +118,24 @@ public class MainActivity extends Activity {
             return insets;
         });
         scroll.addView(root);
-        setContentView(scroll);
+        screen.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
+
+        // Persistent floating camera action, centered at the bottom as in the earlier layout.
+        Button cameraFab = button("●", PRIMARY);
+        receiptButton = cameraFab;
+        cameraFab.setTextSize(25);
+        cameraFab.setGravity(Gravity.CENTER);
+        GradientDrawable fabBackground = new GradientDrawable();
+        fabBackground.setShape(GradientDrawable.OVAL);
+        fabBackground.setColor(PRIMARY);
+        cameraFab.setBackground(fabBackground);
+        cameraFab.setElevation(dp(8));
+        cameraFab.setContentDescription("Tirar foto do documento");
+        cameraFab.setOnClickListener(v -> captureReceiptPhoto());
+        FrameLayout.LayoutParams fabParams = new FrameLayout.LayoutParams(dp(64), dp(64), Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        fabParams.bottomMargin = dp(18);
+        screen.addView(cameraFab, fabParams);
+        setContentView(screen);
 
         TextView eyebrow = text("GESTÃO FINANCEIRA", 11, PRIMARY, true);
         root.addView(eyebrow);
@@ -145,16 +164,10 @@ public class MainActivity extends Activity {
         root.addView(section, margin(0, 0, 0, 8));
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
-        Button camera = button("Tirar foto", PRIMARY);
-        receiptButton = camera;
-        camera.setOnClickListener(v -> captureReceiptPhoto());
-        actions.addView(camera, new LinearLayout.LayoutParams(0, dp(50), 1));
-        Button choose = button("Escolher imagem", Color.rgb(230, 231, 250));
+        Button choose = button("Galeria / documentos", Color.rgb(230, 231, 250));
         choose.setTextColor(PRIMARY);
         choose.setOnClickListener(v -> openReceiptPicker());
-        LinearLayout.LayoutParams chooseParams = new LinearLayout.LayoutParams(0, dp(50), 1);
-        chooseParams.leftMargin = dp(9);
-        actions.addView(choose, chooseParams);
+        actions.addView(choose, new LinearLayout.LayoutParams(-1, dp(48)));
         root.addView(actions, margin(0, 0, 0, 8));
         Button export = button("Exportar histórico (CSV)", Color.rgb(230, 231, 250));
         export.setTextColor(PRIMARY);

@@ -34,4 +34,23 @@ public class BrazilianMoneyTest {
     public void rejectsMalformedMixedSeparators() {
         BrazilianMoney.parseToCents("1.234,56.70");
     }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void rejectsZeroAsAnEntryAmount() {
+        BrazilianMoney.parseToCents("0,00");
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void rejectsNegativeAmountsInsteadOfSilentlyChangingTheirMeaning() {
+        BrazilianMoney.parseToCents("-25,90");
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void rejectsBrokenThousandsGrouping() {
+        BrazilianMoney.parseToCents("12.34,56");
+    }
+
+    @Test public void formatsNegativeBalancesForBusinessLosses() {
+        assertEquals("-1.234,56", BrazilianMoney.formatCents(-123456L));
+    }
 }

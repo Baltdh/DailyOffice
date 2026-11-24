@@ -10,7 +10,7 @@ Aplicativo Android de controle financeiro pessoal e empresarial, com foco em mic
 - Prévia do texto reconhecido, linha usada e nível heurístico de confiança.
 - O valor sugerido não é salvo automaticamente: o usuário confere e pode editar descrição, valor e categoria.
 - Valores armazenados como centavos inteiros e analisados com BigDecimal, sem somas monetárias em double.
-- Resumo separado de faturamento empresarial, despesas empresariais, resultado dos lançamentos e movimentações pessoais.
+- Resumo separado de faturamento empresarial, despesas empresariais, resultado dos lançamentos e movimentações pessoais.\n- Histórico dos 20 lançamentos mais recentes, com exclusão individual protegida por confirmação e atualização automática dos totais.
 - Aportes pessoais e transferências entre contas próprias não entram no faturamento.
 
 ## Regras financeiras

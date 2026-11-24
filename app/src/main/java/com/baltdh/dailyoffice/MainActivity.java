@@ -450,11 +450,11 @@ public class MainActivity extends Activity {
             int progress = (int)Math.min(10000L, revenue * 10000L / MEI_PERIOD_LIMIT_CENTS);
             ((android.widget.ProgressBar)meiProgressView).setProgress(progress);
         }
-        summary.setText("PESSOAL\\nReceitas: " + money(personalIncome) + "    Despesas: " + money(personalOut)
-                + "\\n\\nAPORTES\\nAportes pessoais: " + money(contribution)
-                + "\\nTransferências entre contas próprias ficam fora do faturamento."
-                + "\\n\\nResultado empresarial = faturamento lançado − despesas empresariais lançadas."
-                + "\\nEste resumo não substitui conciliação bancária ou apuração fiscal.");
+        summary.setText("PESSOAL\nReceitas: " + money(personalIncome) + "    Despesas: " + money(personalOut)
+                + "\n\nAPORTES\nAportes pessoais: " + money(contribution)
+                + "\nTransferências entre contas próprias ficam fora do faturamento."
+                + "\n\nResultado empresarial = faturamento lançado − despesas empresariais lançadas."
+                + "\nEste resumo não substitui conciliação bancária ou apuração fiscal.");
         refreshHistory();
     }
 

@@ -13,7 +13,7 @@ Aplicativo Android de controle financeiro pessoal e empresarial, com foco em mic
 - Resumo separado de faturamento empresarial, despesas empresariais, resultado dos lançamentos e movimentações pessoais.
 - Histórico dos 20 lançamentos mais recentes, com data e hora, exclusão individual protegida por confirmação e atualização automática dos totais.
 - Migração SQLite compatível adiciona a coluna de data/hora sem recriar a tabela nem apagar lançamentos anteriores; registros antigos são identificados como sem data.
-- Exportação do histórico completo para CSV UTF-8 com delimitador `;`, incluindo data/hora quando disponível; campos com aspas, quebras de linha e delimitadores são escapados.
+- Exportação do histórico completo para CSV UTF-8 com delimitador `;`, incluindo data/hora quando disponível; campos com aspas, quebras de linha e delimitadores são escapados; prefixos que poderiam ser interpretados como fórmulas por planilhas são neutralizados.
 - Aportes pessoais e transferências entre contas próprias não entram no faturamento.
 
 ## Regras financeiras
@@ -29,7 +29,7 @@ Aplicativo Android de controle financeiro pessoal e empresarial, com foco em mic
 
 - Android nativo em Java; minSdk 26, targetSdk 35.
 - Google ML Kit Text Recognition com modelo Latin empacotado para disponibilidade imediata e leitura offline.
-- Testes unitários para formatos monetários brasileiros, seleção de totais em notas simuladas e escape seguro dos campos CSV e formatação de datas.
+- Testes unitários para formatos monetários brasileiros, seleção de totais em notas simuladas e escape seguro dos campos CSV, proteção contra injeção de fórmulas e formatação de datas.
 - GitHub Actions executa testDebugUnitTest e assembleDebug.
 
 ## Limitações conhecidas

@@ -1130,12 +1130,26 @@ public class MainActivity extends Activity {
                 .setMessage("O registro \"" + description + "\" será removido e os totais serão atualizados.")
                 .setNegativeButton("Cancelar", (dialog, which) -> dialog.dismiss())
                 .setPositiveButton("Excluir", (dialog, which) -> {
-                    String receiptPath = null;
-                    Cursor receiptCursor = db.rawQuery("SELECT receipt_image_path FROM entries WHERE id=?", new String[]{String.valueOf(id)});
-                    try { if (receiptCursor.moveToFirst()) receiptPath = receiptCursor.getString(0); }
-                    finally { receiptCursor.close(); }
+                    String[] receiptPaths = new String[3];
+                    Cursor receiptCursor = db.rawQuery("SELECT receipt_image_path,receipt_original_path,receipt_scanned_path FROM entries WHERE id=?",
+                            new String[]{String.valueOf(id)});
+                    try {
+                        if (receiptCursor.moveToFirst()) {
+                            for (int i = 0; i < receiptPaths.length; i++) receiptPaths[i] = receiptCursor.getString(i);
+                        }
+                    } finally { receiptCursor.close(); }
                     int deleted = db.delete("entries", "id=?", new String[]{String.valueOf(id)});
-                    if (deleted > 0 && receiptPath != null && !receiptPath.isEmpty()) new File(receiptPath).delete();
+                    if (deleted > 0) {
+                        for (int i = 0; i < receiptPaths.length; i++) {
+                            String path = receiptPaths[i];
+                            if (path == null || path.isEmpty()) continue;
+                            boolean alreadyDeleted = false;
+                            for (int previous = 0; previous < i; previous++) {
+                                if (path.equals(receiptPaths[previous])) { alreadyDeleted = true; break; }
+                            }
+                            if (!alreadyDeleted) new File(path).delete();
+                        }
+                    }
                     refreshSummary();
                     Toast.makeText(this, "Lançamento excluído.", Toast.LENGTH_SHORT).show();
                 })
@@ -1180,6 +1194,8 @@ public class MainActivity extends Activity {
 
     @Override protected void onDestroy() {
         if (textRecognizer != null) textRecognizer.close();
+        if (receiptImagePreview != null) receiptImagePreview.setImageDrawable(null);
+        recycleReceiptBitmaps();
         if (db != null && db.isOpen()) db.close();
         super.onDestroy();
     }

@@ -276,7 +276,7 @@ public class MainActivity extends Activity {
         }
         root.addView(filters, margin(0, 0, 0, 12));
         LinearLayout history = card(Color.WHITE); history.setPadding(dp(16), dp(15), dp(16), dp(15));
-        archivedCountView = text("Comprovantes arquivados (0)", 18, INK, true);
+        archivedCountView = text("Histórico de lançamentos", 18, INK, true);
         history.addView(archivedCountView, margin(0, 0, 0, 10));
         historyContainer = new LinearLayout(this);
         historyContainer.setOrientation(LinearLayout.VERTICAL);
@@ -293,7 +293,9 @@ public class MainActivity extends Activity {
         LinearLayout tile = card(Color.WHITE);
         tile.setPadding(dp(14), dp(12), dp(14), dp(12));
         tile.addView(text(label, 13, INK, true));
-        TextView value = text("R$ 0,00", 19, INK, true);
+        boolean unavailable = slot == 2 || slot == 3;
+        TextView value = text(unavailable ? "Sem controle" : "R$ 0,00",
+                unavailable ? 13 : 19, unavailable ? MUTED : INK, true);
         value.setPadding(0, dp(5), 0, 0);
         tile.addView(value);
         if (slot == 0) businessRevenueView = value;
@@ -643,7 +645,7 @@ public class MainActivity extends Activity {
         String query = searchInput == null ? "" : searchInput.getText().toString().trim().toLowerCase(java.util.Locale.ROOT);
         try {
             if (!c.moveToFirst()) {
-                archivedCountView.setText("Comprovantes arquivados (0)");
+                archivedCountView.setText("Histórico de lançamentos (0)");
                 historyContainer.addView(text("Nenhum lançamento registrado ainda.", 13, MUTED, false));
                 return;
             }
@@ -654,8 +656,11 @@ public class MainActivity extends Activity {
                 boolean personal = kind.equals(PERSONAL_REVENUE) || kind.equals(PERSONAL_EXPENSE) || kind.equals(CONTRIBUTION);
                 boolean matchesFilter = historyFilter.equals("Todos") || (historyFilter.equals("Empresa") && business)
                         || (historyFilter.equals("Pessoal") && personal) || (historyFilter.equals("Mistos") && kind.equals(TRANSFER));
+                String paymentMethod = c.getString(5);
                 boolean matchesQuery = query.isEmpty() || description.toLowerCase(java.util.Locale.ROOT).contains(query)
-                        || kind.toLowerCase(java.util.Locale.ROOT).contains(query);
+                        || kind.toLowerCase(java.util.Locale.ROOT).contains(query)
+                        || (paymentMethod != null && paymentMethod.toLowerCase(java.util.Locale.ROOT).contains(query))
+                        || money(c.getLong(2)).toLowerCase(java.util.Locale.ROOT).contains(query);
                 if (!matchesFilter || !matchesQuery) continue;
                 if (shown >= 20) break;
                 shown++;
@@ -670,7 +675,6 @@ public class MainActivity extends Activity {
                 info.addView(text(description, 14, INK, true));
                 info.addView(text(kind + "  •  " + money(amount), 11, MUTED, false));
                 info.addView(text(EntryDate.formatOrUnknown(createdAt), 10, MUTED, false));
-                String paymentMethod = c.getString(5);
                 if (paymentMethod != null && !paymentMethod.isEmpty()) info.addView(text("Pagamento: " + paymentMethod, 10, MUTED, false));
                 row.addView(info, new LinearLayout.LayoutParams(0, -2, 1));
                 Button remove = button("Excluir", Color.rgb(252, 235, 237));
@@ -685,7 +689,7 @@ public class MainActivity extends Activity {
                     historyContainer.addView(divider, new LinearLayout.LayoutParams(-1, dp(1)));
                 }
             } while (c.moveToNext());
-            archivedCountView.setText("Comprovantes arquivados (" + shown + ")");
+            archivedCountView.setText("Exibidos: " + shown + " (máximo de 20)");
             if (shown == 0) historyContainer.addView(text("Nenhum resultado encontrado.", 13, MUTED, false));
         } finally {
             c.close();

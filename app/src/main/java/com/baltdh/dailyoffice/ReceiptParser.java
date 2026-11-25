@@ -20,6 +20,7 @@ public final class ReceiptParser {
             "TOTAL GERAL", "TOTAL DA COMPRA", "TOTAL DO PEDIDO", "VALOR FINAL", "TOTAL PAGO"
     };
     private static final String[] WEAK_TOTAL_LABELS = {"TOTAL"};
+    private static final String[] PAYMENT_METHODS = {"CARTAO DE DEBITO", "CARTAO DE CREDITO", "CARTAO DEBITO", "CARTAO CREDITO", "DEBITO", "CREDITO", "PIX", "DINHEIRO", "ESPECIE", "VALE ALIMENTACAO", "VALE REFEICAO", "VOUCHER", "TRANSFERENCIA", "BOLETO"};
     private static final String[] EXCLUDED_TERMS = {
             "TROCO", "DESCONTO", "SUBTOTAL", "TRIBUTOS", "IMPOSTO", "ICMS",
             "PIS", "COFINS", "BASE DE CALCULO", "VALOR APROXIMADO DOS TRIBUTOS",
@@ -76,10 +77,10 @@ public final class ReceiptParser {
             }
         }
 
-        String description = extractDescription(lines, payroll);
+        String description = extractDescription(lines, payroll);\n        String paymentMethod = extractPaymentMethod(lines);
         String suggestedKind = payroll ? "Receita pessoal" : "Despesa empresarial";
         if (best == null || best.score < 35) {
-            return new Result(false, 0L, description, "", "Não identificado", 0, source, payroll, suggestedKind);
+            return new Result(false, 0L, description, "", "Não identificado", 0, source, payroll, suggestedKind, paymentMethod);
         }
         String confidence = best.score >= 145 ? "Alta" : best.score >= 85 ? "Média" : "Baixa";
         return new Result(true, best.cents, description, best.line, confidence, best.score,
@@ -121,6 +122,45 @@ public final class ReceiptParser {
             while (matcher.find()) found = Math.max(found, matcher.start());
         }
         return found;
+    }
+
+    private static String extractPaymentMethod(String[] lines) {
+        for (int i = 0; i < lines.length; i++) {
+            String heading = normalize(lines[i]);
+            if (!heading.contains("FORMA DE PAGAMENTO") && !heading.equals("PAGAMENTO")) continue;
+            for (int j = i + 1; j < lines.length && j <= i + 4; j++) {
+                String candidate = normalize(lines[j]);
+                if (candidate.isEmpty() || candidate.equals("VALOR PAGO") || candidate.equals("VALOR")) continue;
+                String method = findPaymentMethod(candidate);
+                if (method != null) return formatPaymentMethod(method);
+            }
+        }
+        for (String line : lines) {
+            String method = findPaymentMethod(normalize(line));
+            if (method != null) return formatPaymentMethod(method);
+        }
+        return "";
+    }
+
+    private static String findPaymentMethod(String candidate) {
+        for (String method : PAYMENT_METHODS) {
+            if (candidate.equals(method) || candidate.startsWith(method + " ")) return method;
+        }
+        return null;
+    }
+
+    private static String formatPaymentMethod(String method) {
+        switch (method) {
+            case "CARTAO DE DEBITO": case "CARTAO DEBITO": case "DEBITO": return "Cartão de débito";
+            case "CARTAO DE CREDITO": case "CARTAO CREDITO": case "CREDITO": return "Cartão de crédito";
+            case "PIX": return "Pix";
+            case "DINHEIRO": case "ESPECIE": return "Dinheiro";
+            case "VALE ALIMENTACAO": return "Vale-alimentação";
+            case "VALE REFEICAO": return "Vale-refeição";
+            case "TRANSFERENCIA": return "Transferência";
+            case "BOLETO": return "Boleto";
+            default: return method;
+        }
     }
 
     private static boolean isPayrollDocument(String text) {
@@ -176,13 +216,13 @@ public final class ReceiptParser {
         public final int score;
         public final String rawText;
         public final boolean payrollDocument;
-        public final String suggestedKind;
+        public final String suggestedKind;\n        public final String paymentMethod;
 
         Result(boolean hasAmount, long amountCents, String description, String selectedLine,
-               String confidence, int score, String rawText, boolean payrollDocument, String suggestedKind) {
+               String confidence, int score, String rawText, boolean payrollDocument, String suggestedKind, String paymentMethod) {
             this.hasAmount = hasAmount; this.amountCents = amountCents; this.description = description;
             this.selectedLine = selectedLine; this.confidence = confidence; this.score = score;
-            this.rawText = rawText; this.payrollDocument = payrollDocument; this.suggestedKind = suggestedKind;
+            this.rawText = rawText; this.payrollDocument = payrollDocument; this.suggestedKind = suggestedKind; this.paymentMethod = paymentMethod;
         }
     }
 }

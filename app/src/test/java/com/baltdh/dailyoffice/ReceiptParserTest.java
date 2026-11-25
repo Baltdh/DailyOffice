@@ -73,8 +73,8 @@ public class ReceiptParserTest {
     }
 
     @Test public void findsPayableTotalAfterItemListWhenLabelIsOnSeparateLine() {
-        String sample = "MERCADO BOM PRECO\\nARROZ 5,99\\nFEIJAO 8,49\\nOLEO 6,79\\n" +
-                "TOTAL DOS PRODUTOS\\n21,27\\nDESCONTO 1,27\\nTOTAL A PAGAR\\nR$ 20,00";
+        String sample = "MERCADO BOM PRECO\nARROZ 5,99\nFEIJAO 8,49\nOLEO 6,79\n" +
+                "TOTAL DOS PRODUTOS\n21,27\nDESCONTO 1,27\nTOTAL A PAGAR\nR$ 20,00";
         ReceiptParser.Result r = ReceiptParser.parse(sample);
         assertTrue(r.hasAmount);
         assertEquals(2000L, r.amountCents);
@@ -82,18 +82,29 @@ public class ReceiptParserTest {
     }
 
     @Test public void recognizesSplitTotalLabelAcrossMultipleOcrLines() {
-        String sample = "LOJA CENTRAL\\nPRODUTO A 10,00\\nPRODUTO B 15,00\\n" +
-                "VALOR TOTAL\\nA PAGAR\\nR$ 25,00";
+        String sample = "LOJA CENTRAL\nPRODUTO A 10,00\nPRODUTO B 15,00\n" +
+                "VALOR TOTAL\nA PAGAR\nR$ 25,00";
         ReceiptParser.Result r = ReceiptParser.parse(sample);
         assertTrue(r.hasAmount);
         assertEquals(2500L, r.amountCents);
     }
 
     @Test public void doesNotPreferSubtotalWhenFinalTotalIsBelowItemList() {
-        String sample = "SUPERMERCADO\\nSUBTOTAL R$ 74,90\\n" +
-                "DESCONTO R$ 4,90\\nTOTAL A PAGAR\\nR$ 70,00";
+        String sample = "SUPERMERCADO\nSUBTOTAL R$ 74,90\n" +
+                "DESCONTO R$ 4,90\nTOTAL A PAGAR\nR$ 70,00";
         ReceiptParser.Result r = ReceiptParser.parse(sample);
         assertTrue(r.hasAmount);
         assertEquals(7000L, r.amountCents);
+    }
+    @Test public void detectsDebitCardPaymentBelowPaymentHeading() {
+        String sample = "MERCADO\\nVALOR TOTAL R$ 167,63\\nFORMA DE PAGAMENTO Valor Pago\\nCartão de Débito\\n167,63";
+        ReceiptParser.Result r = ReceiptParser.parse(sample);
+        assertEquals(16763L, r.amountCents);
+        assertEquals("Cartão de débito", r.paymentMethod);
+    }
+
+    @Test public void detectsPixPaymentMethod() {
+        ReceiptParser.Result r = ReceiptParser.parse("LOJA\\nTOTAL A PAGAR 25,00\\nFORMA DE PAGAMENTO\\nPIX\\nVALOR PAGO 25,00");
+        assertEquals("Pix", r.paymentMethod);
     }
 }

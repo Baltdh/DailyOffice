@@ -155,7 +155,9 @@ public final class ReceiptParser {
             String n = normalize(lines[i]);
             if (n.contains("FORMA DE PAGAMENTO") || n.contains("FORMA PAGAMENTO") || n.contains("FORMA PAGTO")
                     || n.contains("MEIO DE PAGAMENTO") || n.contains("MEIO PAGTO")
-                    || n.contains("TIPO DE PAGAMENTO") || n.contains("PAGAMENTO VIA") || n.equals("PAGAMENTO")) {
+                    || n.contains("TIPO DE PAGAMENTO") || n.contains("METODO DE PAGAMENTO")
+                    || n.contains("METODO PAGAMENTO") || n.startsWith("PAGAMENTO VIA")
+                    || n.startsWith("PAGAMENTO COM") || n.equals("PAGAMENTO")) {
                 heading = i;
                 break;
             }
@@ -355,20 +357,8 @@ public final class ReceiptParser {
 
     private static String extractDescription(String[] lines, boolean payroll) {
         if (payroll) return "Recebimento de férias / salário";
-        int inspected = 0;
-        for (String raw : lines) {
-            if (inspected++ >= 8) break;
-            String line = raw.trim().replaceAll("\\s+", " ");
-            if (line.length() < 3 || !line.matches(".*[A-Za-zÀ-ÿ].*")) continue;
-            String normalized = normalize(line);
-            if (containsAny(normalized, IDENTIFICATION_TERMS)) continue;
-            if (normalized.startsWith("DATA") || normalized.startsWith("HORA")
-                    || normalized.contains("NOTA FISCAL") || normalized.contains("DOCUMENTO AUXILIAR")
-                    || normalized.contains("DANFE") || normalized.equals("CUPOM FISCAL")
-                    || normalized.contains("CONSULTE PELA CHAVE")) continue;
-            return line.length() > 70 ? line.substring(0, 70) : line;
-        }
-        return "Documento importado";
+        String merchant = extractMerchant(lines, false);
+        return merchant.isEmpty() ? "Compra sem estabelecimento identificado" : merchant;
     }
 
     private static boolean containsAny(String text, String[] terms) {

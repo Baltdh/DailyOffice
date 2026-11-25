@@ -101,6 +101,7 @@ public class MainActivity extends Activity {
         ensureCreatedAtColumn();
         ensurePaymentMethodColumn();
         ensurePurchaseDetailsColumn();
+        ensureReceiptImageColumn();
         textRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
         if (state != null) {
             String savedUri = state.getString("camera_photo_uri");
@@ -153,6 +154,16 @@ public class MainActivity extends Activity {
             while (columns.moveToNext()) if ("purchase_details".equals(columns.getString(1))) { found = true; break; }
         } finally { columns.close(); }
         if (!found) db.execSQL("ALTER TABLE entries ADD COLUMN purchase_details TEXT NOT NULL DEFAULT ''");
+    }
+
+    /** Adds the private receipt-image path without altering existing entries. */
+    private void ensureReceiptImageColumn() {
+        boolean found = false;
+        Cursor columns = db.rawQuery("PRAGMA table_info(entries)", null);
+        try {
+            while (columns.moveToNext()) if ("receipt_image_path".equals(columns.getString(1))) { found = true; break; }
+        } finally { columns.close(); }
+        if (!found) db.execSQL("ALTER TABLE entries ADD COLUMN receipt_image_path TEXT NOT NULL DEFAULT ''");
     }
 
     private void buildScreen() {
@@ -618,17 +629,65 @@ public class MainActivity extends Activity {
         if (currentReceiptUri == null) return;
         try {
             if (currentReceiptBitmap == null) currentReceiptBitmap = decodeReceiptBitmap(currentReceiptUri, 2200);
-            ImageView enlarged = new ImageView(this);
-            enlarged.setAdjustViewBounds(true);
-            enlarged.setScaleType(ImageView.ScaleType.FIT_CENTER);
-            enlarged.setImageBitmap(currentReceiptBitmap);
-            ScrollView viewer = new ScrollView(this);
-            viewer.setFillViewport(true);
-            viewer.addView(enlarged, new ScrollView.LayoutParams(-1, -2));
-            new AlertDialog.Builder(this).setTitle("Comprovante digitalizado")
-                    .setView(viewer).setPositiveButton("Fechar", (dialog, which) -> dialog.dismiss()).show();
+            showReceiptBitmapDialog(currentReceiptBitmap, "Comprovante digitalizado");
         } catch (IOException | RuntimeException ex) {
             Toast.makeText(this, "Não foi possível ampliar esta imagem.", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void showSavedReceipt(String path) {
+        if (path == null || path.trim().isEmpty()) return;
+        File file = new File(path);
+        if (!file.isFile()) {
+            Toast.makeText(this, "O arquivo deste comprovante não está disponível.", Toast.LENGTH_LONG).show();
+            return;
+        }
+        try {
+            Bitmap bitmap = decodeReceiptBitmap(Uri.fromFile(file), 2800);
+            showReceiptBitmapDialog(bitmap, "Comprovante do lançamento");
+        } catch (IOException | RuntimeException ex) {
+            Toast.makeText(this, "Não foi possível abrir o comprovante salvo.", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void showReceiptBitmapDialog(Bitmap bitmap, String title) {
+        ImageView enlarged = new ImageView(this);
+        enlarged.setAdjustViewBounds(true);
+        enlarged.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        enlarged.setImageBitmap(bitmap);
+        ScrollView viewer = new ScrollView(this);
+        viewer.setFillViewport(true);
+        viewer.addView(enlarged, new ScrollView.LayoutParams(-1, -2));
+        new AlertDialog.Builder(this).setTitle(title)
+                .setView(viewer).setPositiveButton("Fechar", (dialog, which) -> dialog.dismiss()).show();
+    }
+
+    /** Stores a compressed private copy, independent of the original gallery URI. */
+    private File saveReceiptCopy() throws IOException {
+        if (currentReceiptUri == null) return null;
+        Bitmap bitmap = currentReceiptBitmap;
+        boolean temporary = false;
+        if (bitmap == null) {
+            bitmap = decodeReceiptBitmap(currentReceiptUri, 2600);
+            temporary = true;
+        }
+        File directory = new File(getFilesDir(), "receipts");
+        if (!directory.exists() && !directory.mkdirs()) {
+            if (temporary) bitmap.recycle();
+            throw new IOException("Não foi possível criar a pasta de comprovantes.");
+        }
+        File file = File.createTempFile("receipt_", ".jpg", directory);
+        try (FileOutputStream output = new FileOutputStream(file)) {
+            if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 90, output)) {
+                throw new IOException("Não foi possível comprimir o comprovante.");
+            }
+            output.flush();
+            return file;
+        } catch (IOException | RuntimeException ex) {
+            file.delete();
+            throw ex;
+        } finally {
+            if (temporary) bitmap.recycle();
         }
     }
 
@@ -702,13 +761,26 @@ public class MainActivity extends Activity {
         values.put("payment_method", paymentInput.getText().toString().trim());
         values.put("purchase_details", detailsInput.getText().toString().trim());
         values.put("created_at", System.currentTimeMillis());
+        File savedReceipt = null;
+        boolean receiptCopyFailed = false;
+        if (currentReceiptUri != null) {
+            try {
+                savedReceipt = saveReceiptCopy();
+                if (savedReceipt != null) values.put("receipt_image_path", savedReceipt.getAbsolutePath());
+            } catch (IOException | RuntimeException ex) {
+                receiptCopyFailed = true;
+            }
+        }
         try {
             db.insertOrThrow("entries", null, values);
             amountInput.setText(""); descriptionInput.setText(""); paymentInput.setText(""); detailsInput.setText(""); kindInput.setSelection(0);
-            receiptPreview.setText("Lançamento salvo. Importe outro documento ou registre uma nova movimentação.");
+            receiptPreview.setText("Lançamento salvo. O comprovante ficará disponível no histórico quando a imagem tiver sido anexada.");
             refreshSummary();
-            Toast.makeText(this, "Lançamento salvo.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, receiptCopyFailed
+                    ? "Lançamento salvo, mas não foi possível anexar a imagem."
+                    : "Lançamento e comprovante salvos.", Toast.LENGTH_LONG).show();
         } catch (RuntimeException ex) {
+            if (savedReceipt != null) savedReceipt.delete();
             Toast.makeText(this, "Não foi possível salvar o lançamento.", Toast.LENGTH_LONG).show();
         }
     }
@@ -791,7 +863,7 @@ public class MainActivity extends Activity {
     private void refreshHistory() {
         if (historyContainer == null) return;
         historyContainer.removeAllViews();
-        Cursor c = db.rawQuery("SELECT id,kind,amount,description,created_at,payment_method,purchase_details FROM entries ORDER BY id DESC", null);
+        Cursor c = db.rawQuery("SELECT id,kind,amount,description,created_at,payment_method,purchase_details,receipt_image_path FROM entries ORDER BY id DESC", null);
         int shown = 0;
         String query = searchInput == null ? "" : searchInput.getText().toString().trim().toLowerCase(java.util.Locale.ROOT);
         try {
@@ -809,6 +881,7 @@ public class MainActivity extends Activity {
                         || (historyFilter.equals("Pessoal") && personal) || (historyFilter.equals("Mistos") && kind.equals(TRANSFER));
                 String paymentMethod = c.getString(5);
                 String purchaseDetails = c.getString(6);
+                String receiptImagePath = c.getString(7);
                 boolean matchesQuery = query.isEmpty() || description.toLowerCase(java.util.Locale.ROOT).contains(query)
                         || (purchaseDetails != null && purchaseDetails.toLowerCase(java.util.Locale.ROOT).contains(query))
                         || kind.toLowerCase(java.util.Locale.ROOT).contains(query)
@@ -833,6 +906,12 @@ public class MainActivity extends Activity {
                     TextView detailsView = text(purchaseDetails, 10, MUTED, false);
                     detailsView.setMaxLines(3);
                     info.addView(detailsView);
+                }
+                if (receiptImagePath != null && !receiptImagePath.isEmpty()) {
+                    TextView receiptLink = text("Ver comprovante digitalizado", 11, PRIMARY, true);
+                    receiptLink.setPadding(0, dp(5), 0, 0);
+                    receiptLink.setOnClickListener(v -> showSavedReceipt(receiptImagePath));
+                    info.addView(receiptLink);
                 }
                 row.addView(info, new LinearLayout.LayoutParams(0, -2, 1));
                 Button remove = button("Excluir", Color.rgb(252, 235, 237));
@@ -860,7 +939,12 @@ public class MainActivity extends Activity {
                 .setMessage("O registro \"" + description + "\" será removido e os totais serão atualizados.")
                 .setNegativeButton("Cancelar", (dialog, which) -> dialog.dismiss())
                 .setPositiveButton("Excluir", (dialog, which) -> {
-                    db.delete("entries", "id=?", new String[]{String.valueOf(id)});
+                    String receiptPath = null;
+                    Cursor receiptCursor = db.rawQuery("SELECT receipt_image_path FROM entries WHERE id=?", new String[]{String.valueOf(id)});
+                    try { if (receiptCursor.moveToFirst()) receiptPath = receiptCursor.getString(0); }
+                    finally { receiptCursor.close(); }
+                    int deleted = db.delete("entries", "id=?", new String[]{String.valueOf(id)});
+                    if (deleted > 0 && receiptPath != null && !receiptPath.isEmpty()) new File(receiptPath).delete();
                     refreshSummary();
                     Toast.makeText(this, "Lançamento excluído.", Toast.LENGTH_SHORT).show();
                 })

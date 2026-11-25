@@ -10,6 +10,7 @@ import androidx.core.content.FileProvider;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.graphics.Color;
+import android.graphics.Rect;
 import android.graphics.Bitmap;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -35,9 +36,14 @@ import android.widget.Toast;
 import com.google.mlkit.vision.common.InputImage;
 import com.google.mlkit.vision.text.TextRecognition;
 import com.google.mlkit.vision.text.TextRecognizer;
+import com.google.mlkit.vision.text.Text;
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.OutputStream;
@@ -396,7 +402,7 @@ public class MainActivity extends Activity {
             textRecognizer.process(image)
                     .addOnSuccessListener(visionText -> {
                         if (isFinishing()) return;
-                        String recognized = visionText == null ? "" : visionText.getText();
+                        String recognized = visionText == null ? "" : extractStructuredOcrText(visionText);
                         if (recognized == null || recognized.trim().isEmpty()) {
                             receiptPreview.setText("A imagem foi aberta, mas o OCR não encontrou texto legível. Tente enquadrar a nota inteira, aproximar a câmera e melhorar a iluminação.");
                             Toast.makeText(this, "Nenhum texto foi identificado. Tente outra foto.", Toast.LENGTH_LONG).show();
@@ -424,6 +430,78 @@ public class MainActivity extends Activity {
             Toast.makeText(this, "Não consegui abrir a imagem.", Toast.LENGTH_LONG).show();
             scrollToReceiptPreview();
         }
+    }
+
+    /**
+     * Rebuild OCR text using the physical positions of ML Kit lines.
+     * Lines sharing the same visual row are joined from left to right, which
+     * keeps labels and amounts together when a receipt uses two columns.
+     */
+    private String extractStructuredOcrText(Text visionText) {
+        final class PositionedLine {
+            final String value;
+            final Rect bounds;
+            PositionedLine(String value, Rect bounds) {
+                this.value = value;
+                this.bounds = bounds;
+            }
+        }
+
+        List<PositionedLine> lines = new ArrayList<>();
+        for (Text.TextBlock block : visionText.getTextBlocks()) {
+            for (Text.Line line : block.getLines()) {
+                String value = line.getText() == null ? "" : line.getText().trim();
+                Rect bounds = line.getBoundingBox();
+                if (!value.isEmpty() && bounds != null) {
+                    lines.add(new PositionedLine(value, new Rect(bounds)));
+                }
+            }
+        }
+        if (lines.isEmpty()) return visionText.getText();
+
+        Collections.sort(lines, (a, b) -> {
+            int vertical = Integer.compare(a.bounds.top, b.bounds.top);
+            if (Math.abs(a.bounds.top - b.bounds.top) <= 8) {
+                return Integer.compare(a.bounds.left, b.bounds.left);
+            }
+            return vertical;
+        });
+
+        StringBuilder ordered = new StringBuilder();
+        List<PositionedLine> row = new ArrayList<>();
+        int rowCenter = Integer.MIN_VALUE;
+        int rowTolerance = 10;
+        for (PositionedLine line : lines) {
+            int center = (line.bounds.top + line.bounds.bottom) / 2;
+            int height = Math.max(1, line.bounds.height());
+            int tolerance = Math.max(rowTolerance, height / 2);
+            if (!row.isEmpty() && Math.abs(center - rowCenter) > tolerance) {
+                appendOcrRow(ordered, row);
+                row.clear();
+            }
+            if (row.isEmpty()) rowCenter = center;
+            else rowCenter = (rowCenter * (row.size()) + center) / (row.size() + 1);
+            row.add(line);
+        }
+        if (!row.isEmpty()) appendOcrRow(ordered, row);
+        String result = ordered.toString().trim();
+        return result.isEmpty() ? visionText.getText() : result;
+    }
+
+    private void appendOcrRow(StringBuilder output, List<?> positionedLines) {
+        // The list is built in left-to-right order after the visual-row grouping.
+        for (Object item : positionedLines) {
+            try {
+                java.lang.reflect.Field valueField = item.getClass().getDeclaredField("value");
+                valueField.setAccessible(true);
+                String value = (String) valueField.get(item);
+                if (output.length() > 0) output.append("  ");
+                output.append(value);
+            } catch (ReflectiveOperationException ignored) {
+                // The fallback below is provided by ML Kit's original full text.
+            }
+        }
+        output.append('\n');
     }
 
     private void scrollToReceiptPreview() {

@@ -276,6 +276,12 @@ public final class ReceiptParser {
         for (int i = 0; i < Math.min(lines.length, 18); i++) {
             String line = lines[i].trim().replaceAll("\\s+", " ");
             if (line.length() < 3 || line.length() > 70 || !line.matches(".*[A-Za-zÀ-ÿ].*")) continue;
+            Matcher possiblePrice = AMOUNT.matcher(line);
+            boolean hasPrice = false;
+            while (possiblePrice.find()) {
+                if (possiblePrice.group(1).matches(".*[,.][0-9]{1,2}$")) { hasPrice = true; break; }
+            }
+            if (hasPrice) continue;
             String n = normalize(line);
             if (containsAny(n, excluded) || containsAny(n, EXCLUDED_TERMS)) continue;
             if (n.contains("FORMA DE PAGAMENTO") || n.contains("MEIO DE PAGAMENTO") || n.contains("VALOR A PAGAR")) continue;
@@ -326,7 +332,7 @@ public final class ReceiptParser {
             if (item.length() < 3 || !item.matches(".*[A-Za-zÀ-ÿ].*")) continue;
             if (item.length() > 62) item = item.substring(0, 62).trim();
             found.add(item + " — R$ " + BrazilianMoney.formatCents(cents));
-            if (found.size() >= 15) break;
+            if (found.size() >= 40) break;
         }
         StringBuilder out = new StringBuilder();
         for (String item : found) {

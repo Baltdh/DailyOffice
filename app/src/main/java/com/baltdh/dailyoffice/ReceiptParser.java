@@ -1,11 +1,14 @@
 package com.baltdh.dailyoffice;
 
 import java.text.Normalizer;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.Locale;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** Contextual receipt/payroll parser. Suggestions are reviewed by the user before saving. */
+/** Contextual parser for purchase receipts, fiscal coupons and payroll receipts. */
 public final class ReceiptParser {
     private static final Pattern AMOUNT = Pattern.compile(
             "(?<![0-9])(?:R\\s*\\$\\s*)?((?:[0-9]{1,3}(?:[.,\\s][0-9]{3})+|[0-9]+)(?:[.,][0-9]{1,2})?)(?![0-9])",
@@ -16,11 +19,11 @@ public final class ReceiptParser {
             "VALOR A RECEBER", "VALOR RECEBIDO"
     };
     private static final String[] PAYABLE_LABELS = {
-            "TOTAL A PAGAR", "VALOR A PAGAR", "VALOR TOTAL", "TOTAL DA NOTA",
-            "TOTAL GERAL", "TOTAL DA COMPRA", "TOTAL DO PEDIDO", "VALOR FINAL", "TOTAL PAGO"
+            "VALOR A PAGAR", "TOTAL A PAGAR", "VALOR TOTAL", "TOTAL DA NOTA",
+            "TOTAL GERAL", "TOTAL DA COMPRA", "TOTAL DO PEDIDO", "VALOR FINAL",
+            "TOTAL PAGO"
     };
     private static final String[] WEAK_TOTAL_LABELS = {"TOTAL"};
-    private static final String[] PAYMENT_METHODS = {"CARTAO DE DEBITO", "CARTAO DE CREDITO", "CARTAO DEBITO", "CARTAO CREDITO", "DEBITO", "CREDITO", "PIX", "DINHEIRO", "ESPECIE", "VALE ALIMENTACAO", "VALE REFEICAO", "VOUCHER", "TRANSFERENCIA", "BOLETO"};
     private static final String[] EXCLUDED_TERMS = {
             "TROCO", "DESCONTO", "SUBTOTAL", "TRIBUTOS", "IMPOSTO", "ICMS",
             "PIS", "COFINS", "BASE DE CALCULO", "VALOR APROXIMADO DOS TRIBUTOS",
@@ -32,6 +35,12 @@ public final class ReceiptParser {
             "CNPJ", "CPF", "CHAVE DE ACESSO", "PROTOCOLO", "INSCRICAO ESTADUAL",
             "CEP", "TELEFONE", "TELEFON", "DOCUMENTO", "SERIE", "DATA DE EMISSAO",
             "HORA DA EMISSAO", "CODIGO DE BARRAS"
+    };
+    private static final String[] PAYMENT_METHODS = {
+            "CARTAO DE DEBITO", "CARTAO DE CREDITO", "CARTAO DEBITO", "CARTAO CREDITO",
+            "CARTAO DEBIT", "CARTAO CRED", "DEBITO", "CREDITO", "PIX", "DINHEIRO",
+            "ESPECIE", "VALE ALIMENTACAO", "VALE REFEICAO", "VOUCHER",
+            "TRANSFERENCIA", "BOLETO", "CHEQUE"
     };
 
     private ReceiptParser() { }
@@ -57,11 +66,10 @@ public final class ReceiptParser {
                 } catch (IllegalArgumentException ex) {
                     continue;
                 }
+
                 String prefix = normalize(originalLine.substring(0, matcher.start()));
-                // OCR engines frequently split labels and amounts into separate lines.
-                // Inspect up to three preceding lines, but keep the nearest label explicit.
                 StringBuilder contextBuilder = new StringBuilder(prefix);
-                for (int back = 1; back <= 3 && lineIndex - back >= 0; back++) {
+                for (int back = 1; back <= 4 && lineIndex - back >= 0; back++) {
                     String prior = normalize(lines[lineIndex - back]);
                     if (prior.isEmpty()) continue;
                     contextBuilder.insert(0, prior + " ");
@@ -69,22 +77,26 @@ public final class ReceiptParser {
                             || containsAny(prior, EXCLUDED_TERMS)) break;
                 }
                 String context = contextBuilder.toString();
-                int score = scoreCandidate(context, matcher.group().toUpperCase(Locale.ROOT).contains("R$"),
+                int score = scoreCandidate(context,
+                        matcher.group().toUpperCase(Locale.ROOT).contains("R$"),
                         token.matches(".*[,.][0-9]{1,2}$"), lineIndex, lines.length, payroll);
-                if (best == null || score > best.score || (score == best.score && lineIndex > best.lineIndex)) {
+                if (best == null || score > best.score
+                        || (score == best.score && lineIndex > best.lineIndex)) {
                     best = new Candidate(cents, score, lineIndex, originalLine);
                 }
             }
         }
 
-        String description = extractDescription(lines, payroll);\n        String paymentMethod = extractPaymentMethod(lines);
+        String description = extractDescription(lines, payroll);
+        String paymentMethod = extractPaymentMethod(lines);
         String suggestedKind = payroll ? "Receita pessoal" : "Despesa empresarial";
         if (best == null || best.score < 35) {
-            return new Result(false, 0L, description, "", "Não identificado", 0, source, payroll, suggestedKind, paymentMethod);
+            return new Result(false, 0L, description, "", "Não identificado", 0,
+                    source, payroll, suggestedKind, paymentMethod);
         }
         String confidence = best.score >= 145 ? "Alta" : best.score >= 85 ? "Média" : "Baixa";
         return new Result(true, best.cents, description, best.line, confidence, best.score,
-                source, payroll, suggestedKind);
+                source, payroll, suggestedKind, paymentMethod);
     }
 
     private static int scoreCandidate(String context, boolean explicitCurrency, boolean hasDecimal,
@@ -96,12 +108,12 @@ public final class ReceiptParser {
         int excludedIndex = lastLabelIndex(context, EXCLUDED_TERMS);
 
         if (netIndex >= 0) score += 230;
+        else if (payableIndex >= 0) score += 190;
         else if (payroll) {
             if (lastLabelIndex(context, new String[]{"FERIAS"}) >= 0) score += 25;
             if (lastLabelIndex(context, new String[]{"PROVENTOS"}) >= 0) score += 35;
-        } else if (payableIndex >= 0) score += 185;
-        else if (weakTotalIndex >= 0) score += 105;
-        else if (lastLabelIndex(context, new String[]{"VALOR"}) >= 0) score += 65;
+        } else if (weakTotalIndex >= 0) score += 100;
+        else if (lastLabelIndex(context, new String[]{"VALOR"}) >= 0) score += 55;
 
         if (explicitCurrency) score += 25;
         if (hasDecimal) score += 12;
@@ -125,40 +137,65 @@ public final class ReceiptParser {
     }
 
     private static String extractPaymentMethod(String[] lines) {
+        Set<String> methods = new LinkedHashSet<>();
+        int heading = -1;
         for (int i = 0; i < lines.length; i++) {
-            String heading = normalize(lines[i]);
-            if (!heading.contains("FORMA DE PAGAMENTO") && !heading.equals("PAGAMENTO")) continue;
-            for (int j = i + 1; j < lines.length && j <= i + 4; j++) {
-                String candidate = normalize(lines[j]);
-                if (candidate.isEmpty() || candidate.equals("VALOR PAGO") || candidate.equals("VALOR")) continue;
-                String method = findPaymentMethod(candidate);
-                if (method != null) return formatPaymentMethod(method);
+            String n = normalize(lines[i]);
+            if (n.contains("FORMA DE PAGAMENTO") || n.contains("FORMA PAGAMENTO")
+                    || n.contains("MEIO DE PAGAMENTO") || n.equals("PAGAMENTO")) {
+                heading = i;
+                break;
             }
         }
-        for (String line : lines) {
-            String method = findPaymentMethod(normalize(line));
-            if (method != null) return formatPaymentMethod(method);
+
+        if (heading >= 0) {
+            for (int i = heading; i < lines.length && i <= heading + 8; i++) {
+                String n = normalize(lines[i]);
+                if (i > heading && (n.contains("TROCO") || n.contains("VALOR A PAGAR")
+                        || n.contains("CHAVE DE ACESSO") || n.contains("CONSULTE"))) break;
+                addPaymentMethods(methods, n);
+            }
         }
-        return "";
+        if (methods.isEmpty()) {
+            for (String line : lines) addPaymentMethods(methods, normalize(line));
+        }
+        ArrayList<String> formatted = new ArrayList<>();
+        for (String method : methods) formatted.add(formatPaymentMethod(method));
+        return joinPaymentMethods(formatted);
     }
 
-    private static String findPaymentMethod(String candidate) {
+    private static void addPaymentMethods(Set<String> methods, String candidate) {
         for (String method : PAYMENT_METHODS) {
-            if (candidate.equals(method) || candidate.startsWith(method + " ")) return method;
+            if (candidate.equals(method) || candidate.startsWith(method + " ")
+                    || candidate.contains(" " + method + " ")) {
+                methods.add(method);
+            }
         }
-        return null;
+    }
+
+    private static String joinPaymentMethods(ArrayList<String> methods) {
+        StringBuilder out = new StringBuilder();
+        for (String method : methods) {
+            if (out.length() > 0) out.append(" + ");
+            out.append(method);
+        }
+        return out.toString();
     }
 
     private static String formatPaymentMethod(String method) {
         switch (method) {
-            case "CARTAO DE DEBITO": case "CARTAO DEBITO": case "DEBITO": return "Cartão de débito";
-            case "CARTAO DE CREDITO": case "CARTAO CREDITO": case "CREDITO": return "Cartão de crédito";
+            case "CARTAO DE DEBITO": case "CARTAO DEBITO": case "CARTAO DE DEBIT": case "DEBITO":
+                return "Cartão de débito";
+            case "CARTAO DE CREDITO": case "CARTAO CREDITO": case "CARTAO DE CRED": case "CREDITO":
+                return "Cartão de crédito";
             case "PIX": return "Pix";
             case "DINHEIRO": case "ESPECIE": return "Dinheiro";
             case "VALE ALIMENTACAO": return "Vale-alimentação";
             case "VALE REFEICAO": return "Vale-refeição";
             case "TRANSFERENCIA": return "Transferência";
             case "BOLETO": return "Boleto";
+            case "CHEQUE": return "Cheque";
+            case "VOUCHER": return "Voucher";
             default: return method;
         }
     }
@@ -201,7 +238,10 @@ public final class ReceiptParser {
     }
 
     private static final class Candidate {
-        final long cents; final int score; final int lineIndex; final String line;
+        final long cents;
+        final int score;
+        final int lineIndex;
+        final String line;
         Candidate(long cents, int score, int lineIndex, String line) {
             this.cents = cents; this.score = score; this.lineIndex = lineIndex; this.line = line;
         }
@@ -216,13 +256,22 @@ public final class ReceiptParser {
         public final int score;
         public final String rawText;
         public final boolean payrollDocument;
-        public final String suggestedKind;\n        public final String paymentMethod;
+        public final String suggestedKind;
+        public final String paymentMethod;
 
         Result(boolean hasAmount, long amountCents, String description, String selectedLine,
-               String confidence, int score, String rawText, boolean payrollDocument, String suggestedKind, String paymentMethod) {
-            this.hasAmount = hasAmount; this.amountCents = amountCents; this.description = description;
-            this.selectedLine = selectedLine; this.confidence = confidence; this.score = score;
-            this.rawText = rawText; this.payrollDocument = payrollDocument; this.suggestedKind = suggestedKind; this.paymentMethod = paymentMethod;
+               String confidence, int score, String rawText, boolean payrollDocument,
+               String suggestedKind, String paymentMethod) {
+            this.hasAmount = hasAmount;
+            this.amountCents = amountCents;
+            this.description = description;
+            this.selectedLine = selectedLine;
+            this.confidence = confidence;
+            this.score = score;
+            this.rawText = rawText;
+            this.payrollDocument = payrollDocument;
+            this.suggestedKind = suggestedKind;
+            this.paymentMethod = paymentMethod;
         }
     }
 }

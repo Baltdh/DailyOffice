@@ -57,13 +57,17 @@ public final class ReceiptParser {
                     continue;
                 }
                 String prefix = normalize(originalLine.substring(0, matcher.start()));
-                String previous = lineIndex > 0 ? normalize(lines[lineIndex - 1]) : "";
-                String context = prefix;
-                if (previous.length() > 0 && !containsAny(previous, EXCLUDED_TERMS)
-                        && (containsAny(previous, NET_LABELS) || containsAny(previous, PAYABLE_LABELS)
-                        || previous.matches(".*\\bTOTAL\\b.*"))) {
-                    context = previous + " " + context;
+                // OCR engines frequently split labels and amounts into separate lines.
+                // Inspect up to three preceding lines, but keep the nearest label explicit.
+                StringBuilder contextBuilder = new StringBuilder(prefix);
+                for (int back = 1; back <= 3 && lineIndex - back >= 0; back++) {
+                    String prior = normalize(lines[lineIndex - back]);
+                    if (prior.isEmpty()) continue;
+                    contextBuilder.insert(0, prior + " ");
+                    if (containsAny(prior, NET_LABELS) || containsAny(prior, PAYABLE_LABELS)
+                            || containsAny(prior, EXCLUDED_TERMS)) break;
                 }
+                String context = contextBuilder.toString();
                 int score = scoreCandidate(context, matcher.group().toUpperCase(Locale.ROOT).contains("R$"),
                         token.matches(".*[,.][0-9]{1,2}$"), lineIndex, lines.length, payroll);
                 if (best == null || score > best.score || (score == best.score && lineIndex > best.lineIndex)) {

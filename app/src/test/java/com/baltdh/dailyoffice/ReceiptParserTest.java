@@ -141,21 +141,21 @@ public class ReceiptParserTest {
     }
 
     @Test public void identifiesDebitAndCardBrandWithoutDuplicatingMethod() {
-        ReceiptParser.Result r = ReceiptParser.parse("LOJA CENTRAL\\nTOTAL A PAGAR R$ 45,00\\n"
-                + "FORMA DE PAGAMENTO\\nCARTAO VISA DEBITO\\nVALOR PAGO 45,00");
+        ReceiptParser.Result r = ReceiptParser.parse("LOJA CENTRAL\nTOTAL A PAGAR R$ 45,00\n"
+                + "FORMA DE PAGAMENTO\nCARTAO VISA DEBITO\nVALOR PAGO 45,00");
         assertEquals(4500L, r.amountCents);
         assertEquals("Cartão de débito (Visa)", r.paymentMethod);
     }
 
     @Test public void doesNotTreatPaidAmountLabelAsPaymentMethod() {
-        ReceiptParser.Result r = ReceiptParser.parse("LOJA CENTRAL\\nTOTAL A PAGAR R$ 45,00\\n"
-                + "FORMA DE PAGAMENTO\\nVALOR PAGO R$ 45,00");
+        ReceiptParser.Result r = ReceiptParser.parse("LOJA CENTRAL\nTOTAL A PAGAR R$ 45,00\n"
+                + "FORMA DE PAGAMENTO\nVALOR PAGO R$ 45,00");
         assertEquals("", r.paymentMethod);
     }
 
     @Test public void detectsCreditCardBrandWhenTypeIsNotPrinted() {
-        ReceiptParser.Result r = ReceiptParser.parse("LOJA CENTRAL\\nTOTAL R$ 45,00\\n"
-                + "FORMA DE PAGAMENTO\\nMASTERCARD\\nVALOR PAGO R$ 45,00");
+        ReceiptParser.Result r = ReceiptParser.parse("LOJA CENTRAL\nTOTAL R$ 45,00\n"
+                + "FORMA DE PAGAMENTO\nMASTERCARD\nVALOR PAGO R$ 45,00");
         assertEquals("Cartão (modalidade não identificada) (Mastercard)", r.paymentMethod);
     }
 

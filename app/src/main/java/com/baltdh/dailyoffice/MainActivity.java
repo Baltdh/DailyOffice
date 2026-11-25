@@ -162,7 +162,7 @@ public class MainActivity extends Activity {
         screen.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
 
         // Persistent floating camera action, centered at the bottom as in the earlier layout.
-        Button cameraFab = button("●", PRIMARY);
+        Button cameraFab = button("📷", PRIMARY);
         receiptButton = cameraFab;
         cameraFab.setTextSize(25);
         cameraFab.setGravity(Gravity.CENTER);

@@ -12,6 +12,8 @@ import android.database.sqlite.SQLiteDatabase;
 import android.graphics.Color;
 import android.graphics.Rect;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Matrix;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
@@ -41,6 +43,7 @@ import com.google.mlkit.vision.text.Text;
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -85,6 +88,7 @@ public class MainActivity extends Activity {
     private TextRecognizer textRecognizer;
     private Uri cameraPhotoUri;
     private Uri currentReceiptUri;
+    private Bitmap currentReceiptBitmap;
     private File cameraPhotoFile;
 
     @Override public void onCreate(Bundle state) {
@@ -553,24 +557,66 @@ public class MainActivity extends Activity {
     private void showReceiptImage(Uri uri) {
         if (receiptImagePreview == null || uri == null) return;
         try {
-            receiptImagePreview.setImageURI(null);
-            receiptImagePreview.setImageURI(uri);
+            currentReceiptBitmap = decodeReceiptBitmap(uri, 2200);
+            receiptImagePreview.setImageBitmap(currentReceiptBitmap);
             receiptImagePreview.setVisibility(View.VISIBLE);
             receiptImagePreview.setOnClickListener(v -> showReceiptFullScreen());
-        } catch (RuntimeException ex) {
+        } catch (IOException | RuntimeException ex) {
+            currentReceiptBitmap = null;
             receiptImagePreview.setImageDrawable(null);
             receiptImagePreview.setVisibility(View.GONE);
             Toast.makeText(this, "Não foi possível exibir a imagem, mas o OCR ainda pode ser consultado.", Toast.LENGTH_LONG).show();
         }
     }
 
+    /** Decodes a downscaled copy to keep high-resolution phone photos from exhausting memory. */
+    private Bitmap decodeReceiptBitmap(Uri uri, int maxDimension) throws IOException {
+        BitmapFactory.Options bounds = new BitmapFactory.Options();
+        bounds.inJustDecodeBounds = true;
+        try (InputStream stream = getContentResolver().openInputStream(uri)) {
+            if (stream == null) throw new IOException("Imagem indisponível.");
+            BitmapFactory.decodeStream(stream, null, bounds);
+        }
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) throw new IOException("Formato de imagem inválido.");
+        int sample = 1;
+        while (Math.max(bounds.outWidth / sample, bounds.outHeight / sample) > maxDimension) sample *= 2;
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inSampleSize = sample;
+        options.inPreferredConfig = Bitmap.Config.RGB_565;
+        Bitmap bitmap;
+        try (InputStream stream = getContentResolver().openInputStream(uri)) {
+            if (stream == null) throw new IOException("Imagem indisponível.");
+            bitmap = BitmapFactory.decodeStream(stream, null, options);
+        }
+        if (bitmap == null) throw new IOException("Falha ao decodificar imagem.");
+
+        try (InputStream stream = getContentResolver().openInputStream(uri)) {
+            if (stream != null) {
+                android.media.ExifInterface exif = new android.media.ExifInterface(stream);
+                int orientation = exif.getAttributeInt(android.media.ExifInterface.TAG_ORIENTATION,
+                        android.media.ExifInterface.ORIENTATION_NORMAL);
+                float degrees = orientation == android.media.ExifInterface.ORIENTATION_ROTATE_90 ? 90f
+                        : orientation == android.media.ExifInterface.ORIENTATION_ROTATE_180 ? 180f
+                        : orientation == android.media.ExifInterface.ORIENTATION_ROTATE_270 ? 270f : 0f;
+                if (degrees != 0f) {
+                    Matrix matrix = new Matrix(); matrix.postRotate(degrees);
+                    Bitmap rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, true);
+                    if (rotated != bitmap) bitmap.recycle();
+                    bitmap = rotated;
+                }
+            }
+        } catch (RuntimeException ignored) { /* The image remains viewable if EXIF metadata is malformed. */ }
+        return bitmap;
+    }
+
     private void showReceiptFullScreen() {
         if (currentReceiptUri == null) return;
         try {
+            if (currentReceiptBitmap == null) currentReceiptBitmap = decodeReceiptBitmap(currentReceiptUri, 2200);
             ImageView enlarged = new ImageView(this);
             enlarged.setAdjustViewBounds(true);
             enlarged.setScaleType(ImageView.ScaleType.FIT_CENTER);
-            enlarged.setImageURI(currentReceiptUri);
+            enlarged.setImageBitmap(currentReceiptBitmap);
             ScrollView viewer = new ScrollView(this);
             viewer.setFillViewport(true);
             viewer.addView(enlarged, new ScrollView.LayoutParams(-1, -2));
@@ -608,10 +654,14 @@ public class MainActivity extends Activity {
         }
         if (r.purchaseDate != null && !r.purchaseDate.isEmpty()) out.append("DATA DA COMPRA\n").append(r.purchaseDate).append('\n');
         if (r.documentType != null && !r.documentType.isEmpty()) out.append("TIPO DE DOCUMENTO\n").append(r.documentType).append('\n');
+        StringBuilder editableDetails = new StringBuilder();
+        if (r.purchaseDate != null && !r.purchaseDate.isEmpty()) editableDetails.append("Data: ").append(r.purchaseDate);
         if (r.itemDetails != null && !r.itemDetails.isEmpty()) {
-            detailsInput.setText((r.purchaseDate == null || r.purchaseDate.isEmpty() ? "" : "Data: " + r.purchaseDate + "\n") + r.itemDetails);
+            if (editableDetails.length() > 0) editableDetails.append('\n');
+            editableDetails.append(r.itemDetails);
             out.append("ITENS IDENTIFICADOS\n").append(r.itemDetails).append('\n');
         }
+        if (editableDetails.length() > 0) detailsInput.setText(editableDetails.toString());
         if (r.hasAmount) {
             amountInput.setText(BrazilianMoney.formatCents(r.amountCents));
             out.append("VALOR IDENTIFICADO\nR$ ").append(BrazilianMoney.formatCents(r.amountCents))

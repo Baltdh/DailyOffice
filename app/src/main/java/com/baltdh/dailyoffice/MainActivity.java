@@ -994,35 +994,78 @@ public class MainActivity extends Activity {
         refreshHistory();
     }
 
+    /** Resets the list and renders its first page. */
     private void refreshHistory() {
+        historyLoadedCount = 0;
+        renderHistoryPage(true);
+    }
+
+    private void loadMoreHistory() {
+        renderHistoryPage(false);
+    }
+
+    /**
+     * Loads a bounded page at a time. The database has no total row cap; only
+     * currently rendered rows are kept as Android views to avoid unbounded RAM use.
+     */
+    private void renderHistoryPage(boolean reset) {
         if (historyContainer == null) return;
-        historyContainer.removeAllViews();
-        Cursor c = db.rawQuery("SELECT id,kind,amount,description,created_at,payment_method,purchase_details,receipt_image_path FROM entries ORDER BY id DESC", null);
+        if (reset) {
+            historyLoadedCount = 0;
+            historyContainer.removeAllViews();
+        }
+        Cursor c = db.rawQuery(
+                "SELECT id,kind,amount,description,created_at,payment_method,purchase_details,"
+                        + "receipt_image_path,receipt_original_path,receipt_scanned_path "
+                        + "FROM entries ORDER BY id DESC", null);
+        int skipped = 0;
         int shown = 0;
-        String query = searchInput == null ? "" : searchInput.getText().toString().trim().toLowerCase(java.util.Locale.ROOT);
+        boolean hasMore = false;
+        String query = searchInput == null ? ""
+                : searchInput.getText().toString().trim().toLowerCase(java.util.Locale.ROOT);
         try {
             if (!c.moveToFirst()) {
                 archivedCountView.setText("Histórico de lançamentos (0)");
                 historyContainer.addView(text("Nenhum lançamento registrado ainda.", 13, MUTED, false));
+                historyLoadMoreButton.setVisibility(View.GONE);
                 return;
             }
             do {
                 String kind = c.getString(1);
                 String description = c.getString(3);
-                boolean business = kind.equals(BUSINESS_REVENUE) || kind.equals(BUSINESS_EXPENSE) || kind.equals(BUSINESS_EXPENSE_PERSONAL);
-                boolean personal = kind.equals(PERSONAL_REVENUE) || kind.equals(PERSONAL_EXPENSE) || kind.equals(CONTRIBUTION);
-                boolean matchesFilter = historyFilter.equals("Todos") || (historyFilter.equals("Empresa") && business)
-                        || (historyFilter.equals("Pessoal") && personal) || (historyFilter.equals("Mistos") && kind.equals(TRANSFER));
+                boolean business = kind.equals(BUSINESS_REVENUE) || kind.equals(BUSINESS_EXPENSE)
+                        || kind.equals(BUSINESS_EXPENSE_PERSONAL);
+                boolean personal = kind.equals(PERSONAL_REVENUE) || kind.equals(PERSONAL_EXPENSE)
+                        || kind.equals(CONTRIBUTION);
+                boolean matchesFilter = historyFilter.equals("Todos")
+                        || (historyFilter.equals("Empresa") && business)
+                        || (historyFilter.equals("Pessoal") && personal)
+                        || (historyFilter.equals("Mistos") && kind.equals(TRANSFER));
                 String paymentMethod = c.getString(5);
                 String purchaseDetails = c.getString(6);
-                String receiptImagePath = c.getString(7);
-                boolean matchesQuery = query.isEmpty() || description.toLowerCase(java.util.Locale.ROOT).contains(query)
+                String legacyReceiptPath = c.getString(7);
+                String originalReceiptPath = c.getString(8);
+                String scannedReceiptPath = c.getString(9);
+                if (scannedReceiptPath == null || scannedReceiptPath.isEmpty()) {
+                    scannedReceiptPath = legacyReceiptPath;
+                }
+                boolean matchesQuery = query.isEmpty()
+                        || description.toLowerCase(java.util.Locale.ROOT).contains(query)
                         || (purchaseDetails != null && purchaseDetails.toLowerCase(java.util.Locale.ROOT).contains(query))
                         || kind.toLowerCase(java.util.Locale.ROOT).contains(query)
                         || (paymentMethod != null && paymentMethod.toLowerCase(java.util.Locale.ROOT).contains(query))
                         || money(c.getLong(2)).toLowerCase(java.util.Locale.ROOT).contains(query);
                 if (!matchesFilter || !matchesQuery) continue;
-                if (shown >= 20) break;
+
+                if (skipped < historyLoadedCount) {
+                    skipped++;
+                    continue;
+                }
+                if (shown >= HISTORY_PAGE_SIZE) {
+                    hasMore = true;
+                    break;
+                }
+
                 shown++;
                 long id = c.getLong(0);
                 long amount = c.getLong(2);
@@ -1035,17 +1078,27 @@ public class MainActivity extends Activity {
                 info.addView(text(description, 14, INK, true));
                 info.addView(text(kind + "  •  " + money(amount), 11, MUTED, false));
                 info.addView(text(EntryDate.formatOrUnknown(createdAt), 10, MUTED, false));
-                if (paymentMethod != null && !paymentMethod.isEmpty()) info.addView(text("Pagamento: " + paymentMethod, 10, MUTED, false));
+                if (paymentMethod != null && !paymentMethod.isEmpty()) {
+                    info.addView(text("Pagamento: " + paymentMethod, 10, MUTED, false));
+                }
                 if (purchaseDetails != null && !purchaseDetails.isEmpty()) {
                     TextView detailsView = text(purchaseDetails, 10, MUTED, false);
                     detailsView.setMaxLines(3);
                     info.addView(detailsView);
                 }
-                if (receiptImagePath != null && !receiptImagePath.isEmpty()) {
-                    TextView receiptLink = text("Ver comprovante digitalizado", 11, PRIMARY, true);
-                    receiptLink.setPadding(0, dp(5), 0, 0);
-                    receiptLink.setOnClickListener(v -> showSavedReceipt(receiptImagePath));
-                    info.addView(receiptLink);
+                if (scannedReceiptPath != null && !scannedReceiptPath.isEmpty()) {
+                    TextView scanLink = text("Ver cópia digitalizada • alto contraste", 11, PRIMARY, true);
+                    scanLink.setPadding(0, dp(5), 0, 0);
+                    String pathForScan = scannedReceiptPath;
+                    scanLink.setOnClickListener(v -> showSavedReceipt(pathForScan, "Cópia digitalizada • alto contraste"));
+                    info.addView(scanLink);
+                }
+                if (originalReceiptPath != null && !originalReceiptPath.isEmpty()) {
+                    TextView originalLink = text("Ver foto original", 11, PRIMARY, true);
+                    originalLink.setPadding(0, dp(3), 0, 0);
+                    String pathForOriginal = originalReceiptPath;
+                    originalLink.setOnClickListener(v -> showSavedReceipt(pathForOriginal, "Foto original do comprovante"));
+                    info.addView(originalLink);
                 }
                 row.addView(info, new LinearLayout.LayoutParams(0, -2, 1));
                 Button remove = button("Excluir", Color.rgb(252, 235, 237));
@@ -1054,14 +1107,18 @@ public class MainActivity extends Activity {
                 remove.setOnClickListener(v -> confirmDelete(id, description));
                 row.addView(remove, new LinearLayout.LayoutParams(-2, dp(38)));
                 historyContainer.addView(row, margin(0, 0, 0, 8));
-                if (shown < 20) {
-                    View divider = new View(this);
-                    divider.setBackgroundColor(Color.rgb(235, 237, 243));
-                    historyContainer.addView(divider, new LinearLayout.LayoutParams(-1, dp(1)));
-                }
+                View divider = new View(this);
+                divider.setBackgroundColor(Color.rgb(235, 237, 243));
+                historyContainer.addView(divider, new LinearLayout.LayoutParams(-1, dp(1)));
             } while (c.moveToNext());
-            archivedCountView.setText("Exibidos: " + shown + " (máximo de 20)");
-            if (shown == 0) historyContainer.addView(text("Nenhum resultado encontrado.", 13, MUTED, false));
+
+            historyLoadedCount += shown;
+            archivedCountView.setText("Exibidos: " + historyLoadedCount);
+            if (historyLoadedCount == 0 && query.length() > 0) {
+                historyContainer.addView(text("Nenhum resultado encontrado.", 13, MUTED, false));
+            }
+            historyLoadMoreButton.setVisibility(hasMore ? View.VISIBLE : View.GONE);
+            historyLoadMoreButton.setText("Carregar mais lançamentos");
         } finally {
             c.close();
         }

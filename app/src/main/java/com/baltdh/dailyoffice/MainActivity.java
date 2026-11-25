@@ -618,15 +618,66 @@ public class MainActivity extends Activity {
     private void showReceiptImage(Uri uri) {
         if (receiptImagePreview == null || uri == null) return;
         try {
-            currentReceiptBitmap = decodeReceiptBitmap(uri, 2200);
-            receiptImagePreview.setImageBitmap(currentReceiptBitmap);
+            receiptImagePreview.setImageDrawable(null);
+            recycleReceiptBitmaps();
+            currentReceiptBitmap = decodeReceiptBitmap(uri, 2000);
+            currentScannedBitmap = createScannedCopy(currentReceiptBitmap);
+            showingOriginalReceipt = false;
             receiptImagePreview.setVisibility(View.VISIBLE);
+            if (receiptImageChoices != null) receiptImageChoices.setVisibility(View.VISIBLE);
+            setReceiptPreviewMode(false);
             receiptImagePreview.setOnClickListener(v -> showReceiptFullScreen());
         } catch (IOException | RuntimeException ex) {
-            currentReceiptBitmap = null;
+            recycleReceiptBitmaps();
             receiptImagePreview.setImageDrawable(null);
             receiptImagePreview.setVisibility(View.GONE);
+            if (receiptImageChoices != null) receiptImageChoices.setVisibility(View.GONE);
             Toast.makeText(this, "Não foi possível exibir a imagem, mas o OCR ainda pode ser consultado.", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void recycleReceiptBitmaps() {
+        if (currentReceiptBitmap != null && !currentReceiptBitmap.isRecycled()) currentReceiptBitmap.recycle();
+        if (currentScannedBitmap != null && !currentScannedBitmap.isRecycled()) currentScannedBitmap.recycle();
+        currentReceiptBitmap = null;
+        currentScannedBitmap = null;
+    }
+
+    /** Creates a grayscale, higher-contrast reading copy without modifying the source photo. */
+    private Bitmap createScannedCopy(Bitmap source) {
+        if (source == null || source.isRecycled()) throw new IllegalArgumentException("Foto original indisponível.");
+        Bitmap scan = Bitmap.createBitmap(source.getWidth(), source.getHeight(), Bitmap.Config.RGB_565);
+        Canvas canvas = new Canvas(scan);
+        Paint paint = new Paint(Paint.FILTER_BITMAP_FLAG | Paint.DITHER_FLAG);
+        ColorMatrix grayscale = new ColorMatrix();
+        grayscale.setSaturation(0f);
+        ColorMatrix contrast = new ColorMatrix(new float[]{
+                1.38f, 0f, 0f, 0f, -42f,
+                0f, 1.38f, 0f, 0f, -42f,
+                0f, 0f, 1.38f, 0f, -42f,
+                0f, 0f, 0f, 1f, 0f
+        });
+        grayscale.postConcat(contrast);
+        paint.setColorFilter(new ColorMatrixColorFilter(grayscale));
+        canvas.drawBitmap(source, 0f, 0f, paint);
+        paint.setColorFilter(null);
+        return scan;
+    }
+
+    private void setReceiptPreviewMode(boolean original) {
+        if (currentReceiptBitmap == null || currentScannedBitmap == null || receiptImagePreview == null) return;
+        showingOriginalReceipt = original;
+        receiptImagePreview.setImageBitmap(original ? currentReceiptBitmap : currentScannedBitmap);
+        receiptImagePreview.setContentDescription(original
+                ? "Foto original do comprovante. Toque para ampliar."
+                : "Cópia digitalizada em escala de cinza e alto contraste. Toque para ampliar.");
+        if (scannedOptionButton != null) {
+            scannedOptionButton.setEnabled(original);
+            scannedOptionButton.setTextColor(original ? PRIMARY : Color.WHITE);
+        }
+        if (originalOptionButton != null) {
+            originalOptionButton.setEnabled(!original);
+            originalOptionButton.setTextColor(original ? Color.WHITE : PRIMARY);
         }
     }
 
@@ -671,16 +722,13 @@ public class MainActivity extends Activity {
     }
 
     private void showReceiptFullScreen() {
-        if (currentReceiptUri == null) return;
-        try {
-            if (currentReceiptBitmap == null) currentReceiptBitmap = decodeReceiptBitmap(currentReceiptUri, 2200);
-            showReceiptBitmapDialog(currentReceiptBitmap, "Comprovante digitalizado");
-        } catch (IOException | RuntimeException ex) {
-            Toast.makeText(this, "Não foi possível ampliar esta imagem.", Toast.LENGTH_SHORT).show();
-        }
+        Bitmap selected = showingOriginalReceipt ? currentReceiptBitmap : currentScannedBitmap;
+        if (selected == null || selected.isRecycled()) return;
+        showReceiptBitmapDialog(selected, showingOriginalReceipt
+                ? "Foto original do comprovante" : "Cópia digitalizada • alto contraste");
     }
 
-    private void showSavedReceipt(String path) {
+    private void showSavedReceipt(String path, String title) {
         if (path == null || path.trim().isEmpty()) return;
         File file = new File(path);
         if (!file.isFile()) {
@@ -688,8 +736,8 @@ public class MainActivity extends Activity {
             return;
         }
         try {
-            Bitmap bitmap = decodeReceiptBitmap(Uri.fromFile(file), 2800);
-            showReceiptBitmapDialog(bitmap, "Comprovante do lançamento");
+            Bitmap bitmap = decodeReceiptBitmap(Uri.fromFile(file), 3000);
+            showReceiptBitmapDialog(bitmap, title);
         } catch (IOException | RuntimeException ex) {
             Toast.makeText(this, "Não foi possível abrir o comprovante salvo.", Toast.LENGTH_LONG).show();
         }
@@ -707,13 +755,36 @@ public class MainActivity extends Activity {
                 .setView(viewer).setPositiveButton("Fechar", (dialog, which) -> dialog.dismiss()).show();
     }
 
-    /** Stores a compressed private copy, independent of the original gallery URI. */
-    private File saveReceiptCopy() throws IOException {
+    /** Copies source bytes unchanged; this is the archival original, not the OCR preview. */
+    private File saveOriginalReceiptCopy() throws IOException {
         if (currentReceiptUri == null) return null;
-        Bitmap bitmap = currentReceiptBitmap;
+        File directory = new File(getFilesDir(), "receipts");
+        if (!directory.exists() && !directory.mkdirs()) throw new IOException("Não foi possível criar a pasta de comprovantes.");
+        File file = File.createTempFile("receipt_original_", ".original", directory);
+        try (InputStream input = getContentResolver().openInputStream(currentReceiptUri);
+             FileOutputStream output = new FileOutputStream(file)) {
+            if (input == null) throw new IOException("Imagem original indisponível.");
+            byte[] buffer = new byte[32 * 1024];
+            int count;
+            while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
+            output.flush();
+            if (file.length() == 0L) throw new IOException("A imagem original está vazia.");
+            return file;
+        } catch (IOException | RuntimeException ex) {
+            file.delete();
+            throw ex;
+        }
+    }
+
+    /** Saves the grayscale/contrast-enhanced derivative separately from the untouched original. */
+    private File saveScannedReceiptCopy() throws IOException {
+        Bitmap bitmap = currentScannedBitmap;
         boolean temporary = false;
-        if (bitmap == null) {
-            bitmap = decodeReceiptBitmap(currentReceiptUri, 2600);
+        if (bitmap == null || bitmap.isRecycled()) {
+            if (currentReceiptUri == null) return null;
+            Bitmap source = decodeReceiptBitmap(currentReceiptUri, 2000);
+            try { bitmap = createScannedCopy(source); }
+            finally { source.recycle(); }
             temporary = true;
         }
         File directory = new File(getFilesDir(), "receipts");
@@ -721,18 +792,19 @@ public class MainActivity extends Activity {
             if (temporary) bitmap.recycle();
             throw new IOException("Não foi possível criar a pasta de comprovantes.");
         }
-        File file = File.createTempFile("receipt_", ".jpg", directory);
+        File file = File.createTempFile("receipt_scanned_", ".jpg", directory);
         try (FileOutputStream output = new FileOutputStream(file)) {
-            if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 90, output)) {
-                throw new IOException("Não foi possível comprimir o comprovante.");
+            if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 94, output)) {
+                throw new IOException("Não foi possível gravar a cópia digitalizada.");
             }
             output.flush();
+            if (file.length() == 0L) throw new IOException("A cópia digitalizada ficou vazia.");
             return file;
         } catch (IOException | RuntimeException ex) {
             file.delete();
             throw ex;
         } finally {
-            if (temporary) bitmap.recycle();
+            if (temporary && !bitmap.isRecycled()) bitmap.recycle();
         }
     }
 

@@ -97,14 +97,33 @@ public class ReceiptParserTest {
         assertEquals(7000L, r.amountCents);
     }
     @Test public void detectsDebitCardPaymentBelowPaymentHeading() {
-        String sample = "MERCADO\\nVALOR TOTAL R$ 167,63\\nFORMA DE PAGAMENTO Valor Pago\\nCartão de Débito\\n167,63";
+        String sample = "MERCADO\nVALOR TOTAL R$ 167,63\nFORMA DE PAGAMENTO Valor Pago\nCartão de Débito\n167,63";
         ReceiptParser.Result r = ReceiptParser.parse(sample);
         assertEquals(16763L, r.amountCents);
         assertEquals("Cartão de débito", r.paymentMethod);
     }
 
     @Test public void detectsPixPaymentMethod() {
-        ReceiptParser.Result r = ReceiptParser.parse("LOJA\\nTOTAL A PAGAR 25,00\\nFORMA DE PAGAMENTO\\nPIX\\nVALOR PAGO 25,00");
+        ReceiptParser.Result r = ReceiptParser.parse("LOJA\nTOTAL A PAGAR 25,00\nFORMA DE PAGAMENTO\nPIX\nVALOR PAGO 25,00");
         assertEquals("Pix", r.paymentMethod);
     }
+
+    @Test public void recognizesFiscalCouponPayableTotalAndDoesNotUseChangeAsExpense() {
+        String sample = "CUPOM FISCAL\nVALOR TOTAL R$ 138,74\nDESCONTO R$ 8,00\n" +
+                "VALOR A PAGAR R$ 130,74\nFORMA DE PAGAMENTO\nDINHEIRO\n" +
+                "VALOR PAGO R$ 150,74\nTROCO R$ 20,00";
+        ReceiptParser.Result r = ReceiptParser.parse(sample);
+        assertTrue(r.hasAmount);
+        assertEquals(13074L, r.amountCents);
+        assertEquals("Dinheiro", r.paymentMethod);
+    }
+
+    @Test public void detectsSplitPaymentMethodsWithoutAddingThemToPurchaseTotal() {
+        String sample = "MERCADO\nTOTAL A PAGAR R$ 100,00\nFORMA DE PAGAMENTO\n" +
+                "PIX R$ 60,00\nDINHEIRO R$ 40,00\nVALOR PAGO R$ 100,00";
+        ReceiptParser.Result r = ReceiptParser.parse(sample);
+        assertEquals(10000L, r.amountCents);
+        assertEquals("Pix + Dinheiro", r.paymentMethod);
+    }
+
 }

@@ -449,6 +449,11 @@ public class MainActivity extends Activity {
     private void processReceiptImage(Uri uri) {
         currentReceiptUri = uri;
         showReceiptImage(uri);
+        // A new scan replaces previous suggestions so an old payment method or amount is never reused accidentally.
+        descriptionInput.setText("");
+        amountInput.setText("");
+        paymentInput.setText("");
+        detailsInput.setText("");
         receiptPreview.setText("Imagem carregada. Analisando o documento com OCR…");
         scrollToReceiptPreview();
         receiptButtonState(false);

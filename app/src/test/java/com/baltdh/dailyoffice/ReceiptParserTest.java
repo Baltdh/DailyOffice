@@ -126,4 +126,37 @@ public class ReceiptParserTest {
         assertEquals("Pix + Dinheiro", r.paymentMethod);
     }
 
+
+    @Test public void detectsMerchantDateAndPurchaseItems() {
+        String sample = "DANFE - DOCUMENTO AUXILIAR\nMERCADO BOM PRECO LTDA\nCNPJ 12.345.678/0001-90\n"
+                + "DATA DA EMISSAO 25/11/2026\n001 ARROZ 5KG 25,90\n002 FEIJAO 1KG 8,49\n"
+                + "TOTAL A PAGAR R$ 34,39\nFORMA DE PAGAMENTO\nPIX\nVALOR PAGO 34,39";
+        ReceiptParser.Result r = ReceiptParser.parse(sample);
+        assertEquals("MERCADO BOM PRECO LTDA", r.merchantName);
+        assertEquals("25/11/2026", r.purchaseDate);
+        assertTrue(r.itemDetails.contains("ARROZ 5KG"));
+        assertTrue(r.itemDetails.contains("FEIJAO 1KG"));
+        assertEquals("Pix", r.paymentMethod);
+        assertEquals("NF-e / DANFE", r.documentType);
+    }
+
+    @Test public void identifiesDebitAndCardBrandWithoutDuplicatingMethod() {
+        ReceiptParser.Result r = ReceiptParser.parse("LOJA CENTRAL\\nTOTAL A PAGAR R$ 45,00\\n"
+                + "FORMA DE PAGAMENTO\\nCARTAO VISA DEBITO\\nVALOR PAGO 45,00");
+        assertEquals(4500L, r.amountCents);
+        assertEquals("Cartão de débito (Visa)", r.paymentMethod);
+    }
+
+    @Test public void doesNotTreatPaidAmountLabelAsPaymentMethod() {
+        ReceiptParser.Result r = ReceiptParser.parse("LOJA CENTRAL\\nTOTAL A PAGAR R$ 45,00\\n"
+                + "FORMA DE PAGAMENTO\\nVALOR PAGO R$ 45,00");
+        assertEquals("", r.paymentMethod);
+    }
+
+    @Test public void detectsCreditCardBrandWhenTypeIsNotPrinted() {
+        ReceiptParser.Result r = ReceiptParser.parse("LOJA CENTRAL\\nTOTAL R$ 45,00\\n"
+                + "FORMA DE PAGAMENTO\\nMASTERCARD\\nVALOR PAGO R$ 45,00");
+        assertEquals("Cartão (modalidade não identificada) (Mastercard)", r.paymentMethod);
+    }
+
 }

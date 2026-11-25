@@ -17,7 +17,6 @@ android {
             // Isola a versão de teste para não colidir com a instalação existente
             // assinada por outra chave. Os dados do app já instalado são preservados.
             applicationIdSuffix = ".teste"
-            versionNameSuffix = "-teste"
         }
     }
 

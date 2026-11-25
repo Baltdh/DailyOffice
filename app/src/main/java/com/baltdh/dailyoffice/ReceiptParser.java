@@ -37,11 +37,14 @@ public final class ReceiptParser {
             "HORA DA EMISSAO", "CODIGO DE BARRAS"
     };
     private static final String[] PAYMENT_METHODS = {
-            "CARTAO DE DEBITO", "CARTAO DE CREDITO", "CARTAO DEBITO", "CARTAO CREDITO",
-            "CARTAO DEBIT", "CARTAO CRED", "DEBITO", "CREDITO", "PIX", "DINHEIRO",
-            "ESPECIE", "VALE ALIMENTACAO", "VALE REFEICAO", "VOUCHER",
-            "TRANSFERENCIA", "BOLETO", "CHEQUE"
+            "AMERICAN EXPRESS", "MASTER CARD", "MASTERCARD", "CARTAO DE DEBITO", "CARTAO DE CREDITO",
+            "CARTAO DEBITO", "CARTAO CREDITO", "CARTAO DEBIT", "CARTAO DE CRED",
+            "VALE ALIMENTACAO", "VALE REFEICAO", "MERCADO PAGO", "GOOGLE PAY", "APPLE PAY",
+            "PAGAMENTO INSTANTANEO", "TRANSFERENCIA", "DINHEIRO", "ESPECIE", "VOUCHER",
+            "HIPERCARD", "AMEX", "ALELO", "SODEXO", "TICKET", "PICPAY",
+            "DEBITO", "CREDITO", "CARTAO", "VISA", "ELO", "PIX", "BOLETO", "CHEQUE"
     };
+    private static final Pattern PURCHASE_DATE = Pattern.compile("(?<![0-9])(\\d{2}[./-]\\d{2}[./-]\\d{4}|\\d{4}-\\d{2}-\\d{2})(?![0-9])");
 
     private ReceiptParser() { }
 
@@ -91,16 +94,21 @@ public final class ReceiptParser {
             }
         }
 
-        String description = extractDescription(lines, payroll);
+        String merchantName = extractMerchant(lines, payroll);
+        String description = payroll ? "Recebimento de férias / salário" : merchantName;
+        if (description == null || description.isEmpty()) description = extractDescription(lines, payroll);
+        String purchaseDate = extractPurchaseDate(lines);
+        String itemDetails = extractItemDetails(lines, payroll);
+        String documentType = detectDocumentType(source, payroll);
         String paymentMethod = extractPaymentMethod(lines);
         String suggestedKind = payroll ? "Receita pessoal" : "Despesa empresarial";
         if (best == null || best.score < 35) {
             return new Result(false, 0L, description, "", "Não identificado", 0,
-                    source, payroll, suggestedKind, paymentMethod);
+                    source, payroll, suggestedKind, paymentMethod, merchantName, purchaseDate, itemDetails, documentType);
         }
         String confidence = best.score >= 145 ? "Alta" : best.score >= 85 ? "Média" : "Baixa";
         return new Result(true, best.cents, description, best.line, confidence, best.score,
-                source, payroll, suggestedKind, paymentMethod);
+                source, payroll, suggestedKind, paymentMethod, merchantName, purchaseDate, itemDetails, documentType);
     }
 
     private static int scoreCandidate(String context, boolean explicitCurrency, boolean hasDecimal,
@@ -145,8 +153,9 @@ public final class ReceiptParser {
         int heading = -1;
         for (int i = 0; i < lines.length; i++) {
             String n = normalize(lines[i]);
-            if (n.contains("FORMA DE PAGAMENTO") || n.contains("FORMA PAGAMENTO")
-                    || n.contains("MEIO DE PAGAMENTO") || n.equals("PAGAMENTO")) {
+            if (n.contains("FORMA DE PAGAMENTO") || n.contains("FORMA PAGAMENTO") || n.contains("FORMA PAGTO")
+                    || n.contains("MEIO DE PAGAMENTO") || n.contains("MEIO PAGTO")
+                    || n.contains("TIPO DE PAGAMENTO") || n.contains("PAGAMENTO VIA") || n.equals("PAGAMENTO")) {
                 heading = i;
                 break;
             }
@@ -155,25 +164,36 @@ public final class ReceiptParser {
         if (heading >= 0) {
             for (int i = heading; i < lines.length && i <= heading + 8; i++) {
                 String n = normalize(lines[i]);
-                if (i > heading && (n.contains("TROCO") || n.contains("VALOR A PAGAR")
-                        || n.contains("CHAVE DE ACESSO") || n.contains("CONSULTE"))) break;
+                if (i > heading && (n.contains("TROCO") || n.contains("CHAVE DE ACESSO")
+                        || n.contains("CONSULTE") || n.contains("ITENS DA COMPRA")
+                        || n.contains("TOTAL GERAL") || n.contains("DOCUMENTO AUXILIAR"))) break;
                 addPaymentMethods(methods, n);
             }
         }
         if (methods.isEmpty()) {
-            for (String line : lines) addPaymentMethods(methods, normalize(line));
+            for (String line : lines) {
+                String n = normalize(line);
+                if (n.equals("PIX") || n.equals("DINHEIRO") || n.equals("ESPECIE")
+                        || n.equals("CARTAO DE DEBITO") || n.equals("CARTAO DE CREDITO")
+                        || n.equals("DEBITO") || n.equals("CREDITO") || n.startsWith("PIX ")
+                        || n.startsWith("CARTAO DE DEBITO ") || n.startsWith("CARTAO DE CREDITO ")) {
+                    addPaymentMethods(methods, n);
+                }
+            }
         }
+        if (methods.contains("CARTAO DE DEBITO") || methods.contains("CARTAO DE CREDITO")
+                || methods.contains("CARTAO DEBITO") || methods.contains("CARTAO CREDITO")) methods.remove("CARTAO");
         ArrayList<String> formatted = new ArrayList<>();
         for (String method : methods) formatted.add(formatPaymentMethod(method));
         return joinPaymentMethods(formatted);
     }
 
     private static void addPaymentMethods(Set<String> methods, String candidate) {
+        String clean = candidate.replaceAll("[^A-Z0-9]+", " ").trim();
+        String padded = " " + clean + " ";
         for (String method : PAYMENT_METHODS) {
-            if (candidate.equals(method) || candidate.startsWith(method + " ")
-                    || candidate.contains(" " + method + " ")) {
-                methods.add(method);
-            }
+            String token = " " + method.replaceAll("[^A-Z0-9]+", " ").trim() + " ";
+            if (!token.equals("  ") && padded.contains(token)) methods.add(method);
         }
     }
 
@@ -200,6 +220,18 @@ public final class ReceiptParser {
             case "BOLETO": return "Boleto";
             case "CHEQUE": return "Cheque";
             case "VOUCHER": return "Voucher";
+            case "CARTAO": return "Cartão (modalidade não identificada)";
+            case "VISA": return "Cartão Visa (modalidade não identificada)";
+            case "MASTERCARD": case "MASTER CARD": return "Cartão Mastercard (modalidade não identificada)";
+            case "ELO": return "Cartão Elo (modalidade não identificada)";
+            case "HIPERCARD": return "Cartão Hipercard (modalidade não identificada)";
+            case "AMEX": case "AMERICAN EXPRESS": return "Cartão American Express";
+            case "ALELO": case "SODEXO": case "TICKET": return "Vale-benefício " + method;
+            case "PICPAY": return "PicPay";
+            case "MERCADO PAGO": return "Mercado Pago";
+            case "GOOGLE PAY": return "Google Pay";
+            case "APPLE PAY": return "Apple Pay";
+            case "PAGAMENTO INSTANTANEO": return "Pix";
             default: return method;
         }
     }
@@ -210,6 +242,86 @@ public final class ReceiptParser {
                 || n.contains("HOLERITE") || n.contains("CONTRACHEQUE")
                 || n.contains("FOLHA DE PAGAMENTO") || n.contains("DEMONSTRATIVO DE PAGAMENTO")
                 || n.contains("TOTAL LIQUIDO") && (n.contains("PROVENTOS") || n.contains("DESCONTOS"));
+    }
+
+    private static String extractMerchant(String[] lines, boolean payroll) {
+        if (payroll) return "";
+        String[] excluded = {"DANFE", "NOTA FISCAL", "DOCUMENTO AUXILIAR", "CUPOM FISCAL",
+                "CONSUMIDOR", "CNPJ", "CPF", "INSCRICAO", "IE:", "DATA", "HORA",
+                "EMISSAO", "PROTOCOLO", "CHAVE DE ACESSO", "CONSULTE", "ENDERECO",
+                "TELEFONE", "FONE", "CEP", "SERIE", "NUMERO", "COO", "CCF"};
+        for (int i = 0; i < Math.min(lines.length, 18); i++) {
+            String line = lines[i].trim().replaceAll("\\s+", " ");
+            if (line.length() < 3 || line.length() > 70 || !line.matches(".*[A-Za-zÀ-ÿ].*")) continue;
+            String n = normalize(line);
+            if (containsAny(n, excluded) || containsAny(n, EXCLUDED_TERMS)) continue;
+            if (n.contains("FORMA DE PAGAMENTO") || n.contains("MEIO DE PAGAMENTO") || n.contains("VALOR A PAGAR")) continue;
+            if (n.matches(".*\\b\\d{2}[./-]\\d{2}[./-]\\d{4}\\b.*")) continue;
+            if (line.matches("^[0-9 .,/:-]+$")) continue;
+            return line;
+        }
+        return "";
+    }
+
+    private static String extractPurchaseDate(String[] lines) {
+        for (int i = 0; i < Math.min(lines.length, 24); i++) {
+            String n = normalize(lines[i]);
+            if (!(n.contains("DATA") || n.contains("EMISSAO") || n.contains("COMPRA") || i < 5)) continue;
+            Matcher matcher = PURCHASE_DATE.matcher(lines[i]);
+            if (matcher.find()) return matcher.group(1).replace('.', '/').replace('-', '/');
+        }
+        return "";
+    }
+
+    private static String extractItemDetails(String[] lines, boolean payroll) {
+        if (payroll) return "";
+        Set<String> found = new LinkedHashSet<>();
+        String[] excluded = {"TOTAL", "SUBTOTAL", "DESCONTO", "TROCO", "PAGAMENTO", "FORMA DE",
+                "MEIO DE", "VALOR A PAGAR", "VALOR PAGO", "DINHEIRO", "ESPECIE", "CARTAO",
+                "CREDITO", "DEBITO", "PIX", "VISA", "MASTERCARD", "BOLETO", "CHEQUE",
+                "ICMS", "ISS", "TRIBUTO", "IMPOSTO", "CNPJ", "CPF", "CHAVE DE ACESSO",
+                "PROTOCOLO", "CONSULTE", "QTDE", "QUANTIDADE", "CODIGO", "CUPOM FISCAL",
+                "NOTA FISCAL", "DOCUMENTO AUXILIAR", "VALOR APROXIMADO"};
+        for (String raw : lines) {
+            String line = raw.trim().replaceAll("\\s+", " ");
+            if (line.length() < 5 || line.length() > 120) continue;
+            String n = normalize(line);
+            if (!line.matches(".*[A-Za-zÀ-ÿ].*") || containsAny(n, excluded) || containsAny(n, IDENTIFICATION_TERMS)) continue;
+            Matcher matcher = AMOUNT.matcher(line);
+            String lastValue = null;
+            int lastStart = -1;
+            while (matcher.find()) {
+                String token = matcher.group(1);
+                if (token.matches(".*[,.][0-9]{1,2}$")) { lastValue = token; lastStart = matcher.start(); }
+            }
+            if (lastValue == null || lastStart <= 0) continue;
+            long cents;
+            try { cents = BrazilianMoney.parseToCents(lastValue); }
+            catch (IllegalArgumentException ex) { continue; }
+            String item = line.substring(0, lastStart).replaceAll("^[0-9 .#-]+", "")
+                    .replaceAll("\\s+", " ").replaceAll("[-:|]+$", "").trim();
+            if (item.length() < 3 || !item.matches(".*[A-Za-zÀ-ÿ].*")) continue;
+            if (item.length() > 62) item = item.substring(0, 62).trim();
+            found.add(item + " — R$ " + BrazilianMoney.formatCents(cents));
+            if (found.size() >= 15) break;
+        }
+        StringBuilder out = new StringBuilder();
+        for (String item : found) {
+            if (out.length() > 0) out.append('\n');
+            out.append("• ").append(item);
+        }
+        return out.toString();
+    }
+
+    private static String detectDocumentType(String text, boolean payroll) {
+        if (payroll) return "Recibo de pagamento / férias";
+        String n = normalize(text);
+        if (n.contains("NFC-E") || n.contains("CUPOM FISCAL ELETRONICO")) return "NFC-e / cupom fiscal";
+        if (n.contains("DANFE") || n.contains("NF-E") || n.contains("NOTA FISCAL ELETRONICA")) return "NF-e / DANFE";
+        if (n.contains("COMPROVANTE DE PAGAMENTO") || n.contains("COMPROVANTE CARTAO")) return "Comprovante de pagamento";
+        if (n.contains("RECIBO")) return "Recibo";
+        if (n.contains("CUPOM") || n.contains("TOTAL A PAGAR")) return "Comprovante / cupom de compra";
+        return "";
     }
 
     private static String extractDescription(String[] lines, boolean payroll) {
@@ -262,10 +374,15 @@ public final class ReceiptParser {
         public final boolean payrollDocument;
         public final String suggestedKind;
         public final String paymentMethod;
+        public final String merchantName;
+        public final String purchaseDate;
+        public final String itemDetails;
+        public final String documentType;
 
         Result(boolean hasAmount, long amountCents, String description, String selectedLine,
                String confidence, int score, String rawText, boolean payrollDocument,
-               String suggestedKind, String paymentMethod) {
+               String suggestedKind, String paymentMethod, String merchantName,
+               String purchaseDate, String itemDetails, String documentType) {
             this.hasAmount = hasAmount;
             this.amountCents = amountCents;
             this.description = description;
@@ -276,6 +393,10 @@ public final class ReceiptParser {
             this.payrollDocument = payrollDocument;
             this.suggestedKind = suggestedKind;
             this.paymentMethod = paymentMethod;
+            this.merchantName = merchantName;
+            this.purchaseDate = purchaseDate;
+            this.itemDetails = itemDetails;
+            this.documentType = documentType;
         }
     }
 }

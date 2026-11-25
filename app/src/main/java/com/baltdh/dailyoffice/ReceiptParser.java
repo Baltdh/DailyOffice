@@ -181,11 +181,32 @@ public final class ReceiptParser {
                 }
             }
         }
-        if (methods.contains("CARTAO DE DEBITO") || methods.contains("CARTAO DE CREDITO")
-                || methods.contains("CARTAO DEBITO") || methods.contains("CARTAO CREDITO")) methods.remove("CARTAO");
+        boolean debit = methods.contains("CARTAO DE DEBITO") || methods.contains("CARTAO DEBITO")
+                || methods.contains("CARTAO DE DEBIT") || (methods.contains("CARTAO") && methods.contains("DEBITO"));
+        boolean credit = methods.contains("CARTAO DE CREDITO") || methods.contains("CARTAO CREDITO")
+                || methods.contains("CARTAO DE CRED") || (methods.contains("CARTAO") && methods.contains("CREDITO"));
+        boolean genericCard = methods.contains("CARTAO") || debit || credit;
+        ArrayList<String> brands = new ArrayList<>();
+        addBrand(brands, methods, "VISA", "Visa");
+        addBrand(brands, methods, "MASTERCARD", "Mastercard");
+        addBrand(brands, methods, "MASTER CARD", "Mastercard");
+        addBrand(brands, methods, "ELO", "Elo");
+        addBrand(brands, methods, "HIPERCARD", "Hipercard");
+        addBrand(brands, methods, "AMEX", "American Express");
+        addBrand(brands, methods, "AMERICAN EXPRESS", "American Express");
+        methods.remove("CARTAO"); methods.remove("DEBITO"); methods.remove("CREDITO");
         ArrayList<String> formatted = new ArrayList<>();
+        if (genericCard || !brands.isEmpty()) {
+            String card = debit ? "Cartão de débito" : credit ? "Cartão de crédito" : "Cartão (modalidade não identificada)";
+            if (!brands.isEmpty()) card += " (" + joinPaymentMethods(brands) + ")";
+            formatted.add(card);
+        }
         for (String method : methods) formatted.add(formatPaymentMethod(method));
         return joinPaymentMethods(formatted);
+    }
+
+    private static void addBrand(ArrayList<String> brands, Set<String> methods, String key, String label) {
+        if (methods.remove(key) && !brands.contains(label)) brands.add(label);
     }
 
     private static void addPaymentMethods(Set<String> methods, String candidate) {
@@ -246,7 +267,7 @@ public final class ReceiptParser {
 
     private static String extractMerchant(String[] lines, boolean payroll) {
         if (payroll) return "";
-        String[] excluded = {"DANFE", "NOTA FISCAL", "DOCUMENTO AUXILIAR", "CUPOM FISCAL",
+        String[] excluded = {"DANFE", "NOTA FISCAL", "DOCUMENTO AUXILIAR", "CUPOM FISCAL", "COMPROVANTE", "RECIBO",
                 "CONSUMIDOR", "CNPJ", "CPF", "INSCRICAO", "IE:", "DATA", "HORA",
                 "EMISSAO", "PROTOCOLO", "CHAVE DE ACESSO", "CONSULTE", "ENDERECO",
                 "TELEFONE", "FONE", "CEP", "SERIE", "NUMERO", "COO", "CCF"};

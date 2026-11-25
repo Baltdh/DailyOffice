@@ -195,6 +195,8 @@ public final class ReceiptParser {
         addBrand(brands, methods, "AMEX", "American Express");
         addBrand(brands, methods, "AMERICAN EXPRESS", "American Express");
         methods.remove("CARTAO"); methods.remove("DEBITO"); methods.remove("CREDITO");
+        methods.remove("CARTAO DE DEBITO"); methods.remove("CARTAO DEBITO"); methods.remove("CARTAO DE DEBIT");
+        methods.remove("CARTAO DE CREDITO"); methods.remove("CARTAO CREDITO"); methods.remove("CARTAO DE CRED");
         ArrayList<String> formatted = new ArrayList<>();
         if (genericCard || !brands.isEmpty()) {
             String card = debit ? "Cartão de débito" : credit ? "Cartão de crédito" : "Cartão (modalidade não identificada)";

@@ -671,14 +671,8 @@ public class MainActivity extends Activity {
         receiptImagePreview.setContentDescription(original
                 ? "Foto original do comprovante. Toque para ampliar."
                 : "Cópia digitalizada em escala de cinza e alto contraste. Toque para ampliar.");
-        if (scannedOptionButton != null) {
-            scannedOptionButton.setEnabled(original);
-            scannedOptionButton.setTextColor(original ? PRIMARY : Color.WHITE);
-        }
-        if (originalOptionButton != null) {
-            originalOptionButton.setEnabled(!original);
-            originalOptionButton.setTextColor(original ? Color.WHITE : PRIMARY);
-        }
+        styleReceiptChoice(scannedOptionButton, !original);
+        styleReceiptChoice(originalOptionButton, original);
     }
 
     /** Decodes a downscaled copy to keep high-resolution phone photos from exhausting memory. */
@@ -719,6 +713,17 @@ public class MainActivity extends Activity {
             }
         } catch (IOException | RuntimeException ignored) { /* Keep the decoded image even when EXIF metadata is malformed. */ }
         return bitmap;
+    }
+
+    private void styleReceiptChoice(Button choice, boolean selected) {
+        if (choice == null) return;
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(selected ? PRIMARY : Color.rgb(230, 231, 250));
+        background.setCornerRadius(dp(12));
+        background.setStroke(dp(1), selected ? PRIMARY : Color.rgb(220, 222, 240));
+        choice.setBackground(background);
+        choice.setTextColor(selected ? Color.WHITE : PRIMARY);
+        choice.setEnabled(true);
     }
 
     private void showReceiptFullScreen() {
@@ -878,26 +883,38 @@ public class MainActivity extends Activity {
         values.put("payment_method", paymentInput.getText().toString().trim());
         values.put("purchase_details", detailsInput.getText().toString().trim());
         values.put("created_at", System.currentTimeMillis());
-        File savedReceipt = null;
+        File savedOriginal = null;
+        File savedScanned = null;
         boolean receiptCopyFailed = false;
         if (currentReceiptUri != null) {
             try {
-                savedReceipt = saveReceiptCopy();
-                if (savedReceipt != null) values.put("receipt_image_path", savedReceipt.getAbsolutePath());
+                savedOriginal = saveOriginalReceiptCopy();
+                savedScanned = saveScannedReceiptCopy();
+                if (savedOriginal != null) values.put("receipt_original_path", savedOriginal.getAbsolutePath());
+                if (savedScanned != null) {
+                    values.put("receipt_scanned_path", savedScanned.getAbsolutePath());
+                    // Keep the legacy field populated so older app code can still locate a receipt.
+                    values.put("receipt_image_path", savedScanned.getAbsolutePath());
+                }
             } catch (IOException | RuntimeException ex) {
                 receiptCopyFailed = true;
+                if (savedOriginal != null) savedOriginal.delete();
+                if (savedScanned != null) savedScanned.delete();
+                savedOriginal = null;
+                savedScanned = null;
             }
         }
         try {
             db.insertOrThrow("entries", null, values);
             amountInput.setText(""); descriptionInput.setText(""); paymentInput.setText(""); detailsInput.setText(""); kindInput.setSelection(0);
-            receiptPreview.setText("Lançamento salvo. O comprovante ficará disponível no histórico quando a imagem tiver sido anexada.");
+            receiptPreview.setText("Lançamento salvo. A cópia digitalizada e a foto original ficam disponíveis no histórico.");
             refreshSummary();
             Toast.makeText(this, receiptCopyFailed
-                    ? "Lançamento salvo, mas não foi possível anexar a imagem."
-                    : "Lançamento e comprovante salvos.", Toast.LENGTH_LONG).show();
+                    ? "Lançamento salvo, mas não foi possível anexar as imagens."
+                    : "Lançamento e duas versões do comprovante salvos.", Toast.LENGTH_LONG).show();
         } catch (RuntimeException ex) {
-            if (savedReceipt != null) savedReceipt.delete();
+            if (savedOriginal != null) savedOriginal.delete();
+            if (savedScanned != null) savedScanned.delete();
             Toast.makeText(this, "Não foi possível salvar o lançamento.", Toast.LENGTH_LONG).show();
         }
     }

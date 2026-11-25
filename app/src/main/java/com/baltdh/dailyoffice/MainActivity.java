@@ -634,10 +634,12 @@ public class MainActivity extends Activity {
 
     private void scrollToReceiptPreview() {
         if (mainScroll == null || receiptPreview == null) return;
-        receiptPreview.post(() -> {
+        View targetView = receiptImagePreview != null && receiptImagePreview.getVisibility() == View.VISIBLE
+                ? receiptImagePreview : receiptPreview;
+        targetView.post(() -> {
             int[] previewLocation = new int[2];
             int[] scrollLocation = new int[2];
-            receiptPreview.getLocationOnScreen(previewLocation);
+            targetView.getLocationOnScreen(previewLocation);
             mainScroll.getLocationOnScreen(scrollLocation);
             int target = mainScroll.getScrollY() + previewLocation[1] - scrollLocation[1] - dp(70);
             mainScroll.smoothScrollTo(0, Math.max(0, target));

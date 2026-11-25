@@ -159,4 +159,10 @@ public class ReceiptParserTest {
         assertEquals("Cartão (modalidade não identificada) (Mastercard)", r.paymentMethod);
     }
 
+    @Test public void detectsCardBrandAndCreditWithoutTheWordCard() {
+        ReceiptParser.Result r = ReceiptParser.parse("LOJA CENTRAL\nTOTAL R$ 45,00\n"
+                + "FORMA DE PAGAMENTO\nMASTERCARD CREDITO\nVALOR PAGO R$ 45,00");
+        assertEquals("Cartão de crédito (Mastercard)", r.paymentMethod);
+    }
+
 }

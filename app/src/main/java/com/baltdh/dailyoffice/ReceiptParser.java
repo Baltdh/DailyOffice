@@ -184,9 +184,9 @@ public final class ReceiptParser {
             }
         }
         boolean debit = methods.contains("CARTAO DE DEBITO") || methods.contains("CARTAO DEBITO")
-                || methods.contains("CARTAO DE DEBIT") || (methods.contains("CARTAO") && methods.contains("DEBITO"));
+                || methods.contains("CARTAO DE DEBIT") || methods.contains("DEBITO");
         boolean credit = methods.contains("CARTAO DE CREDITO") || methods.contains("CARTAO CREDITO")
-                || methods.contains("CARTAO DE CRED") || (methods.contains("CARTAO") && methods.contains("CREDITO"));
+                || methods.contains("CARTAO DE CRED") || methods.contains("CREDITO");
         boolean genericCard = methods.contains("CARTAO") || debit || credit;
         ArrayList<String> brands = new ArrayList<>();
         addBrand(brands, methods, "VISA", "Visa");

@@ -911,12 +911,18 @@ public class MainActivity extends Activity {
         }
         try {
             db.insertOrThrow("entries", null, values);
+            clearReceiptAfterSave();
             amountInput.setText(""); descriptionInput.setText(""); paymentInput.setText(""); detailsInput.setText(""); kindInput.setSelection(0);
-            receiptPreview.setText("Lançamento salvo. A cópia digitalizada e a foto original ficam disponíveis no histórico.");
+            receiptPreview.setText(receiptCopyFailed
+                    ? "Lançamento salvo sem as imagens. Você pode anexar o comprovante novamente."
+                    : "Lançamento salvo. As imagens anexadas ficam disponíveis no histórico.");
             refreshSummary();
-            Toast.makeText(this, receiptCopyFailed
+            String savedMessage = receiptCopyFailed
                     ? "Lançamento salvo, mas não foi possível anexar as imagens."
-                    : "Lançamento e duas versões do comprovante salvos.", Toast.LENGTH_LONG).show();
+                    : (savedOriginal != null && savedScanned != null
+                        ? "Lançamento e duas versões do comprovante salvos."
+                        : "Lançamento salvo.");
+            Toast.makeText(this, savedMessage, Toast.LENGTH_LONG).show();
         } catch (RuntimeException ex) {
             if (savedOriginal != null) savedOriginal.delete();
             if (savedScanned != null) savedScanned.delete();
@@ -924,6 +930,21 @@ public class MainActivity extends Activity {
         }
     }
 
+
+    /** Releases the just-saved source image so it cannot be attached to the next entry by accident. */
+    private void clearReceiptAfterSave() {
+        if (cameraPhotoFile != null && cameraPhotoFile.exists()) cameraPhotoFile.delete();
+        cameraPhotoFile = null;
+        cameraPhotoUri = null;
+        currentReceiptUri = null;
+        recycleReceiptBitmaps();
+        if (receiptImagePreview != null) {
+            receiptImagePreview.setImageDrawable(null);
+            receiptImagePreview.setVisibility(View.GONE);
+        }
+        if (receiptImageChoices != null) receiptImageChoices.setVisibility(View.GONE);
+        showingOriginalReceipt = false;
+    }
 
     private void createCsvExport() {
         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
@@ -1010,8 +1031,8 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * Loads a bounded page at a time. The database has no total row cap; only
-     * currently rendered rows are kept as Android views to avoid unbounded RAM use.
+     * Appends up to 50 matching rows. There is no database/history cap; loaded rows
+     * remain in the scroll view, so practical usage is ultimately limited by device RAM.
      */
     private void renderHistoryPage(boolean reset) {
         if (historyContainer == null) return;

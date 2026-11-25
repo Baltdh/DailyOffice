@@ -3,12 +3,14 @@ package com.baltdh.dailyoffice;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ContentValues;
+import android.content.ClipData;
 import android.content.Intent;
 import android.provider.MediaStore;
 import androidx.core.content.FileProvider;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.graphics.Color;
+import android.graphics.Bitmap;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
@@ -37,6 +39,7 @@ import com.google.mlkit.vision.text.latin.TextRecognizerOptions;
 
 import java.io.IOException;
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
@@ -62,6 +65,7 @@ public class MainActivity extends Activity {
     private SQLiteDatabase db;
     private TextView summary, businessRevenueView, expenseView, resultView, receiptPreview;
     private LinearLayout historyContainer;
+    private ScrollView mainScroll;
     private EditText descriptionInput, amountInput;
     private Spinner kindInput;
     private Button receiptButton;
@@ -72,6 +76,7 @@ public class MainActivity extends Activity {
     private static final long MEI_PERIOD_LIMIT_CENTS = 3375000L;
     private TextRecognizer textRecognizer;
     private Uri cameraPhotoUri;
+    private File cameraPhotoFile;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -82,8 +87,20 @@ public class MainActivity extends Activity {
         db.execSQL("CREATE TABLE IF NOT EXISTS entries(id INTEGER PRIMARY KEY AUTOINCREMENT,kind TEXT NOT NULL,amount INTEGER NOT NULL,description TEXT NOT NULL)");
         ensureCreatedAtColumn();
         textRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
+        if (state != null) {
+            String savedUri = state.getString("camera_photo_uri");
+            if (savedUri != null) cameraPhotoUri = Uri.parse(savedUri);
+            String savedPath = state.getString("camera_photo_path");
+            if (savedPath != null) cameraPhotoFile = new File(savedPath);
+        }
         buildScreen();
         refreshSummary();
+    }
+
+    @Override protected void onSaveInstanceState(Bundle outState) {
+        super.onSaveInstanceState(outState);
+        if (cameraPhotoUri != null) outState.putString("camera_photo_uri", cameraPhotoUri.toString());
+        if (cameraPhotoFile != null) outState.putString("camera_photo_path", cameraPhotoFile.getAbsolutePath());
     }
 
     /** Adds the timestamp column without rebuilding or deleting existing user records. */
@@ -103,6 +120,7 @@ public class MainActivity extends Activity {
     private void buildScreen() {
         FrameLayout screen = new FrameLayout(this);
         ScrollView scroll = new ScrollView(this);
+        mainScroll = scroll;
         scroll.setFillViewport(true);
         scroll.setBackgroundColor(BG);
         LinearLayout root = new LinearLayout(this);
@@ -280,19 +298,23 @@ public class MainActivity extends Activity {
 
     private void captureReceiptPhoto() {
         try {
-            File photo = File.createTempFile("dailyoffice_receipt_", ".jpg", getCacheDir());
-            cameraPhotoUri = FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", photo);
+            cameraPhotoFile = File.createTempFile("dailyoffice_receipt_", ".jpg", getCacheDir());
+            cameraPhotoUri = FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", cameraPhotoFile);
             Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
             intent.putExtra(MediaStore.EXTRA_OUTPUT, cameraPhotoUri);
+            // Some camera apps require ClipData as well as URI grant flags for EXTRA_OUTPUT.
+            intent.setClipData(ClipData.newUri(getContentResolver(), "DailyOffice photo", cameraPhotoUri));
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
             if (intent.resolveActivity(getPackageManager()) == null) {
                 Toast.makeText(this, "Nenhum aplicativo de câmera disponível.", Toast.LENGTH_LONG).show();
                 return;
             }
+            Toast.makeText(this, "Tire a foto e confirme para iniciar a leitura.", Toast.LENGTH_SHORT).show();
             startActivityForResult(intent, REQUEST_CAPTURE_PHOTO);
         } catch (IOException | RuntimeException ex) {
             cameraPhotoUri = null;
-            Toast.makeText(this, "Não foi possível preparar a captura da foto.", Toast.LENGTH_LONG).show();
+            cameraPhotoFile = null;
+            Toast.makeText(this, "Não foi possível preparar a captura: " + ex.getMessage(), Toast.LENGTH_LONG).show();
         }
     }
 
@@ -315,7 +337,37 @@ public class MainActivity extends Activity {
             return;
         }
         if (requestCode == REQUEST_CAPTURE_PHOTO) {
-            if (resultCode != RESULT_OK || cameraPhotoUri == null) return;
+            if (resultCode != RESULT_OK) {
+                receiptPreview.setText("A captura foi cancelada. Nenhum lançamento foi criado.");
+                Toast.makeText(this, "Foto cancelada.", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            if (cameraPhotoFile == null || !cameraPhotoFile.exists() || cameraPhotoFile.length() == 0L) {
+                Object extra = data != null && data.getExtras() != null ? data.getExtras().get("data") : null;
+                Bitmap thumbnail = extra instanceof Bitmap ? (Bitmap) extra : null;
+                if (thumbnail != null) {
+                    try {
+                        if (cameraPhotoFile == null) cameraPhotoFile = File.createTempFile("dailyoffice_receipt_", ".jpg", getCacheDir());
+                        try (FileOutputStream output = new FileOutputStream(cameraPhotoFile)) {
+                            thumbnail.compress(Bitmap.CompressFormat.JPEG, 95, output);
+                        }
+                        cameraPhotoUri = FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", cameraPhotoFile);
+                    } catch (IOException | RuntimeException ex) {
+                        receiptPreview.setText("A câmera confirmou a foto, mas não entregou o arquivo para leitura. Tente novamente ou use Galeria.");
+                        Toast.makeText(this, "Não recebi o arquivo da câmera.", Toast.LENGTH_LONG).show();
+                        return;
+                    }
+                } else {
+                    receiptPreview.setText("A câmera confirmou a foto, mas o arquivo recebido está vazio. Tente novamente ou use Galeria.");
+                    Toast.makeText(this, "A foto não chegou ao DailyOffice.", Toast.LENGTH_LONG).show();
+                    return;
+                }
+            }
+            if (cameraPhotoUri == null) {
+                receiptPreview.setText("Não consegui localizar a imagem capturada. Tente novamente.");
+                return;
+            }
+            Toast.makeText(this, "Foto recebida. Iniciando reconhecimento de texto…", Toast.LENGTH_SHORT).show();
             processReceiptImage(cameraPhotoUri);
             return;
         }
@@ -324,19 +376,54 @@ public class MainActivity extends Activity {
     }
 
     private void processReceiptImage(Uri uri) {
-        receiptPreview.setText("Analisando o documento…");
+        receiptPreview.setText("Foto recebida. Analisando o documento com OCR…");
+        scrollToReceiptPreview();
         receiptButtonState(false);
         try {
             InputImage image = InputImage.fromFilePath(this, uri);
-            textRecognizer.process(image).addOnSuccessListener(visionText -> {
-                if (!isFinishing()) applyReceiptResult(ReceiptParser.parse(visionText.getText()));
-            }).addOnFailureListener(error -> {
-                if (!isFinishing()) receiptPreview.setText("Não consegui ler esta imagem. Tente uma foto mais nítida e bem iluminada.");
-            }).addOnCompleteListener(task -> { if (!isFinishing()) receiptButtonState(true); });
+            textRecognizer.process(image)
+                    .addOnSuccessListener(visionText -> {
+                        if (isFinishing()) return;
+                        String recognized = visionText == null ? "" : visionText.getText();
+                        if (recognized == null || recognized.trim().isEmpty()) {
+                            receiptPreview.setText("A imagem foi aberta, mas o OCR não encontrou texto legível. Tente enquadrar a nota inteira, aproximar a câmera e melhorar a iluminação.");
+                            Toast.makeText(this, "Nenhum texto foi identificado. Tente outra foto.", Toast.LENGTH_LONG).show();
+                        } else {
+                            applyReceiptResult(ReceiptParser.parse(recognized));
+                            Toast.makeText(this, "Leitura concluída. Confira o valor antes de salvar.", Toast.LENGTH_LONG).show();
+                        }
+                        scrollToReceiptPreview();
+                    })
+                    .addOnFailureListener(error -> {
+                        if (!isFinishing()) {
+                            String detail = error.getLocalizedMessage();
+                            receiptPreview.setText("Falha no reconhecimento da imagem."
+                                    + (detail == null ? "" : "\nDetalhe: " + detail)
+                                    + "\nTente novamente ou selecione a foto pela Galeria.");
+                            Toast.makeText(this, "Falha ao processar a foto.", Toast.LENGTH_LONG).show();
+                            scrollToReceiptPreview();
+                        }
+                    })
+                    .addOnCompleteListener(task -> { if (!isFinishing()) receiptButtonState(true); });
         } catch (IOException | RuntimeException ex) {
             receiptButtonState(true);
-            receiptPreview.setText("Não foi possível abrir o arquivo selecionado.");
+            receiptPreview.setText("Não foi possível abrir a foto para leitura."
+                    + (ex.getLocalizedMessage() == null ? "" : "\nDetalhe: " + ex.getLocalizedMessage()));
+            Toast.makeText(this, "Não consegui abrir a imagem.", Toast.LENGTH_LONG).show();
+            scrollToReceiptPreview();
         }
+    }
+
+    private void scrollToReceiptPreview() {
+        if (mainScroll == null || receiptPreview == null) return;
+        receiptPreview.post(() -> {
+            int[] previewLocation = new int[2];
+            int[] scrollLocation = new int[2];
+            receiptPreview.getLocationOnScreen(previewLocation);
+            mainScroll.getLocationOnScreen(scrollLocation);
+            int target = mainScroll.getScrollY() + previewLocation[1] - scrollLocation[1] - dp(70);
+            mainScroll.smoothScrollTo(0, Math.max(0, target));
+        });
     }
 
     private void receiptButtonState(boolean enabled) {

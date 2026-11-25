@@ -27,6 +27,7 @@ import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.Spinner;
@@ -70,9 +71,10 @@ public class MainActivity extends Activity {
 
     private SQLiteDatabase db;
     private TextView summary, businessRevenueView, expenseView, resultView, receiptPreview;
+    private ImageView receiptImagePreview;
     private LinearLayout historyContainer;
     private ScrollView mainScroll;
-    private EditText descriptionInput, amountInput, paymentInput;
+    private EditText descriptionInput, amountInput, paymentInput, detailsInput;
     private Spinner kindInput;
     private Button receiptButton;
     private EditText searchInput;
@@ -82,6 +84,7 @@ public class MainActivity extends Activity {
     private static final long MEI_PERIOD_LIMIT_CENTS = 3375000L;
     private TextRecognizer textRecognizer;
     private Uri cameraPhotoUri;
+    private Uri currentReceiptUri;
     private File cameraPhotoFile;
 
     @Override public void onCreate(Bundle state) {
@@ -93,20 +96,25 @@ public class MainActivity extends Activity {
         db.execSQL("CREATE TABLE IF NOT EXISTS entries(id INTEGER PRIMARY KEY AUTOINCREMENT,kind TEXT NOT NULL,amount INTEGER NOT NULL,description TEXT NOT NULL)");
         ensureCreatedAtColumn();
         ensurePaymentMethodColumn();
+        ensurePurchaseDetailsColumn();
         textRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
         if (state != null) {
             String savedUri = state.getString("camera_photo_uri");
             if (savedUri != null) cameraPhotoUri = Uri.parse(savedUri);
+            String savedReceipt = state.getString("receipt_image_uri");
+            if (savedReceipt != null) currentReceiptUri = Uri.parse(savedReceipt);
             String savedPath = state.getString("camera_photo_path");
             if (savedPath != null) cameraPhotoFile = new File(savedPath);
         }
         buildScreen();
+        if (currentReceiptUri != null) showReceiptImage(currentReceiptUri);
         refreshSummary();
     }
 
     @Override protected void onSaveInstanceState(Bundle outState) {
         super.onSaveInstanceState(outState);
         if (cameraPhotoUri != null) outState.putString("camera_photo_uri", cameraPhotoUri.toString());
+        if (currentReceiptUri != null) outState.putString("receipt_image_uri", currentReceiptUri.toString());
         if (cameraPhotoFile != null) outState.putString("camera_photo_path", cameraPhotoFile.getAbsolutePath());
     }
 
@@ -131,6 +139,16 @@ public class MainActivity extends Activity {
             while (columns.moveToNext()) if ("payment_method".equals(columns.getString(1))) { found = true; break; }
         } finally { columns.close(); }
         if (!found) db.execSQL("ALTER TABLE entries ADD COLUMN payment_method TEXT NOT NULL DEFAULT ''");
+    }
+
+    /** Adds purchase details without deleting older database records. */
+    private void ensurePurchaseDetailsColumn() {
+        boolean found = false;
+        Cursor columns = db.rawQuery("PRAGMA table_info(entries)", null);
+        try {
+            while (columns.moveToNext()) if ("purchase_details".equals(columns.getString(1))) { found = true; break; }
+        } finally { columns.close(); }
+        if (!found) db.execSQL("ALTER TABLE entries ADD COLUMN purchase_details TEXT NOT NULL DEFAULT ''");
     }
 
     private void buildScreen() {
@@ -240,6 +258,19 @@ public class MainActivity extends Activity {
         form.addView(amountInput, margin(0, 0, 0, 9));
         paymentInput = field("Forma de pagamento (Pix, débito, crédito...)", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         form.addView(paymentInput, margin(0, 0, 0, 9));
+        detailsInput = new EditText(this);
+        detailsInput.setSingleLine(false);
+        detailsInput.setMinLines(3);
+        detailsInput.setMaxLines(6);
+        detailsInput.setGravity(Gravity.TOP | Gravity.START);
+        detailsInput.setTextSize(14);
+        detailsInput.setHint("Itens e detalhes identificados na compra");
+        detailsInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        detailsInput.setPadding(dp(12), dp(10), dp(12), dp(10));
+        GradientDrawable detailsBg = new GradientDrawable();
+        detailsBg.setColor(Color.rgb(247,248,252)); detailsBg.setCornerRadius(dp(11));
+        detailsBg.setStroke(dp(1), Color.rgb(230,233,241)); detailsInput.setBackground(detailsBg);
+        form.addView(detailsInput, margin(0, 0, 0, 12));
 
         kindInput = new Spinner(this);
         String[] kinds = {BUSINESS_REVENUE, BUSINESS_EXPENSE, PERSONAL_REVENUE, PERSONAL_EXPENSE, CONTRIBUTION, BUSINESS_EXPENSE_PERSONAL, TRANSFER};
@@ -252,7 +283,18 @@ public class MainActivity extends Activity {
 
         LinearLayout review = card(Color.WHITE);
         review.setPadding(dp(14), dp(14), dp(14), dp(14));
-        review.addView(text("Leitura do documento", 15, INK, true));
+        review.addView(text("Comprovante digitalizado", 15, INK, true));
+        receiptImagePreview = new ImageView(this);
+        receiptImagePreview.setAdjustViewBounds(true);
+        receiptImagePreview.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        receiptImagePreview.setMaxHeight(dp(300));
+        receiptImagePreview.setBackgroundColor(Color.rgb(247,248,252));
+        receiptImagePreview.setVisibility(View.GONE);
+        receiptImagePreview.setContentDescription("Pré-visualização do comprovante digitalizado. Toque para ampliar.");
+        receiptImagePreview.setOnClickListener(v -> showReceiptFullScreen());
+        review.addView(receiptImagePreview, margin(0, 10, 0, 8));
+        TextView readLabel = text("Leitura e dados identificados", 14, INK, true);
+        review.addView(readLabel, margin(0, 4, 0, 0));
         receiptPreview = text("Nenhum documento importado. Tire uma foto ou escolha uma imagem para começar.", 12, MUTED, false);
         receiptPreview.setPadding(0, dp(8), 0, 0);
         review.addView(receiptPreview);
@@ -392,11 +434,18 @@ public class MainActivity extends Activity {
             return;
         }
         if (requestCode != REQUEST_RECEIPT_IMAGE || resultCode != RESULT_OK || data == null || data.getData() == null) return;
-        processReceiptImage(data.getData());
+        Uri selectedImage = data.getData();
+        try {
+            int flags = data.getFlags() & Intent.FLAG_GRANT_READ_URI_PERMISSION;
+            if (flags != 0) getContentResolver().takePersistableUriPermission(selectedImage, flags);
+        } catch (SecurityException ignored) { /* The current session can still read the selected image. */ }
+        processReceiptImage(selectedImage);
     }
 
     private void processReceiptImage(Uri uri) {
-        receiptPreview.setText("Foto recebida. Analisando o documento com OCR…");
+        currentReceiptUri = uri;
+        showReceiptImage(uri);
+        receiptPreview.setText("Imagem carregada. Analisando o documento com OCR…");
         scrollToReceiptPreview();
         receiptButtonState(false);
         try {
@@ -501,6 +550,37 @@ public class MainActivity extends Activity {
         output.append('\n');
     }
 
+    private void showReceiptImage(Uri uri) {
+        if (receiptImagePreview == null || uri == null) return;
+        try {
+            receiptImagePreview.setImageURI(null);
+            receiptImagePreview.setImageURI(uri);
+            receiptImagePreview.setVisibility(View.VISIBLE);
+            receiptImagePreview.setOnClickListener(v -> showReceiptFullScreen());
+        } catch (RuntimeException ex) {
+            receiptImagePreview.setImageDrawable(null);
+            receiptImagePreview.setVisibility(View.GONE);
+            Toast.makeText(this, "Não foi possível exibir a imagem, mas o OCR ainda pode ser consultado.", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void showReceiptFullScreen() {
+        if (currentReceiptUri == null) return;
+        try {
+            ImageView enlarged = new ImageView(this);
+            enlarged.setAdjustViewBounds(true);
+            enlarged.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            enlarged.setImageURI(currentReceiptUri);
+            ScrollView viewer = new ScrollView(this);
+            viewer.setFillViewport(true);
+            viewer.addView(enlarged, new ScrollView.LayoutParams(-1, -2));
+            new AlertDialog.Builder(this).setTitle("Comprovante digitalizado")
+                    .setView(viewer).setPositiveButton("Fechar", (dialog, which) -> dialog.dismiss()).show();
+        } catch (RuntimeException ex) {
+            Toast.makeText(this, "Não foi possível ampliar esta imagem.", Toast.LENGTH_SHORT).show();
+        }
+    }
+
     private void scrollToReceiptPreview() {
         if (mainScroll == null || receiptPreview == null) return;
         receiptPreview.post(() -> {
@@ -520,6 +600,18 @@ public class MainActivity extends Activity {
 
     private void applyReceiptResult(ReceiptParser.Result r) {
         StringBuilder out = new StringBuilder();
+        if (r.merchantName != null && !r.merchantName.isEmpty()) {
+            out.append("ESTABELECIMENTO\n").append(r.merchantName).append('\n');
+            descriptionInput.setText(r.merchantName);
+        } else if (r.description != null && !r.description.isEmpty()) {
+            descriptionInput.setText(r.description);
+        }
+        if (r.purchaseDate != null && !r.purchaseDate.isEmpty()) out.append("DATA DA COMPRA\n").append(r.purchaseDate).append('\n');
+        if (r.documentType != null && !r.documentType.isEmpty()) out.append("TIPO DE DOCUMENTO\n").append(r.documentType).append('\n');
+        if (r.itemDetails != null && !r.itemDetails.isEmpty()) {
+            detailsInput.setText((r.purchaseDate == null || r.purchaseDate.isEmpty() ? "" : "Data: " + r.purchaseDate + "\n") + r.itemDetails);
+            out.append("ITENS IDENTIFICADOS\n").append(r.itemDetails).append('\n');
+        }
         if (r.hasAmount) {
             amountInput.setText(BrazilianMoney.formatCents(r.amountCents));
             out.append("VALOR IDENTIFICADO\nR$ ").append(BrazilianMoney.formatCents(r.amountCents))
@@ -534,9 +626,8 @@ public class MainActivity extends Activity {
         } else {
             out.append("Não encontrei um total confiável. Preencha o valor manualmente e confira o texto abaixo.\n\n");
         }
-        if (r.description != null && !r.description.isEmpty()) descriptionInput.setText(r.description);
         String raw = r.rawText == null ? "" : r.rawText.trim();
-        if (raw.length() > 1400) raw = raw.substring(0, 1400) + "\n[prévia reduzida]";
+        if (raw.length() > 5000) raw = raw.substring(0, 5000) + "\n[texto reduzido; imagem completa disponível acima]";
         out.append("TEXTO RECONHECIDO\n").append(raw.isEmpty() ? "Nenhum texto legível." : raw);
         receiptPreview.setText(out.toString());
     }
@@ -552,10 +643,11 @@ public class MainActivity extends Activity {
         values.put("amount", cents);
         values.put("description", description);
         values.put("payment_method", paymentInput.getText().toString().trim());
+        values.put("purchase_details", detailsInput.getText().toString().trim());
         values.put("created_at", System.currentTimeMillis());
         try {
             db.insertOrThrow("entries", null, values);
-            amountInput.setText(""); descriptionInput.setText(""); paymentInput.setText(""); kindInput.setSelection(0);
+            amountInput.setText(""); descriptionInput.setText(""); paymentInput.setText(""); detailsInput.setText(""); kindInput.setSelection(0);
             receiptPreview.setText("Lançamento salvo. Importe outro documento ou registre uma nova movimentação.");
             refreshSummary();
             Toast.makeText(this, "Lançamento salvo.", Toast.LENGTH_SHORT).show();
@@ -585,8 +677,8 @@ public class MainActivity extends Activity {
             try (OutputStream output = stream;
                  OutputStreamWriter writer = new OutputStreamWriter(output, StandardCharsets.UTF_8)) {
                 writer.write("\uFEFF");
-                writer.write("ID;Data e hora;Categoria;Valor (R$);Descrição;Forma de pagamento\r\n");
-                c = db.rawQuery("SELECT id,created_at,kind,amount,description,payment_method FROM entries ORDER BY id ASC", null);
+                writer.write("ID;Data e hora;Categoria;Valor (R$);Descrição;Forma de pagamento;Detalhes da compra\r\n");
+                c = db.rawQuery("SELECT id,created_at,kind,amount,description,payment_method,purchase_details FROM entries ORDER BY id ASC", null);
                 while (c.moveToNext()) {
                     writer.write(String.valueOf(c.getLong(0)));
                     writer.write(';');
@@ -599,6 +691,8 @@ public class MainActivity extends Activity {
                     writer.write(CsvUtils.escape(c.getString(4)));
                     writer.write(';');
                     writer.write(CsvUtils.escape(c.getString(5)));
+                    writer.write(';');
+                    writer.write(CsvUtils.escape(c.getString(6)));
                     writer.write("\r\n");
                 }
                 writer.flush();
@@ -640,7 +734,7 @@ public class MainActivity extends Activity {
     private void refreshHistory() {
         if (historyContainer == null) return;
         historyContainer.removeAllViews();
-        Cursor c = db.rawQuery("SELECT id,kind,amount,description,created_at,payment_method FROM entries ORDER BY id DESC", null);
+        Cursor c = db.rawQuery("SELECT id,kind,amount,description,created_at,payment_method,purchase_details FROM entries ORDER BY id DESC", null);
         int shown = 0;
         String query = searchInput == null ? "" : searchInput.getText().toString().trim().toLowerCase(java.util.Locale.ROOT);
         try {
@@ -657,7 +751,9 @@ public class MainActivity extends Activity {
                 boolean matchesFilter = historyFilter.equals("Todos") || (historyFilter.equals("Empresa") && business)
                         || (historyFilter.equals("Pessoal") && personal) || (historyFilter.equals("Mistos") && kind.equals(TRANSFER));
                 String paymentMethod = c.getString(5);
+                String purchaseDetails = c.getString(6);
                 boolean matchesQuery = query.isEmpty() || description.toLowerCase(java.util.Locale.ROOT).contains(query)
+                        || (purchaseDetails != null && purchaseDetails.toLowerCase(java.util.Locale.ROOT).contains(query))
                         || kind.toLowerCase(java.util.Locale.ROOT).contains(query)
                         || (paymentMethod != null && paymentMethod.toLowerCase(java.util.Locale.ROOT).contains(query))
                         || money(c.getLong(2)).toLowerCase(java.util.Locale.ROOT).contains(query);
@@ -676,6 +772,11 @@ public class MainActivity extends Activity {
                 info.addView(text(kind + "  •  " + money(amount), 11, MUTED, false));
                 info.addView(text(EntryDate.formatOrUnknown(createdAt), 10, MUTED, false));
                 if (paymentMethod != null && !paymentMethod.isEmpty()) info.addView(text("Pagamento: " + paymentMethod, 10, MUTED, false));
+                if (purchaseDetails != null && !purchaseDetails.isEmpty()) {
+                    TextView detailsView = text(purchaseDetails, 10, MUTED, false);
+                    detailsView.setMaxLines(3);
+                    info.addView(detailsView);
+                }
                 row.addView(info, new LinearLayout.LayoutParams(0, -2, 1));
                 Button remove = button("Excluir", Color.rgb(252, 235, 237));
                 remove.setTextColor(Color.rgb(176, 55, 70));

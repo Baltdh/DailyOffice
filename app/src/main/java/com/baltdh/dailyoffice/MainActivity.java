@@ -10,6 +10,10 @@ import androidx.core.content.FileProvider;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.graphics.Color;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.ColorMatrix;
+import android.graphics.ColorMatrixColorFilter;
 import android.graphics.Rect;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
@@ -75,6 +79,9 @@ public class MainActivity extends Activity {
     private SQLiteDatabase db;
     private TextView summary, businessRevenueView, expenseView, resultView, receiptPreview;
     private ImageView receiptImagePreview;
+    private LinearLayout receiptImageChoices;
+    private Button scannedOptionButton, originalOptionButton, historyLoadMoreButton;
+    private boolean showingOriginalReceipt = false;
     private LinearLayout historyContainer;
     private ScrollView mainScroll;
     private EditText descriptionInput, amountInput, paymentInput, detailsInput;
@@ -82,6 +89,8 @@ public class MainActivity extends Activity {
     private Button receiptButton;
     private EditText searchInput;
     private String historyFilter = "Todos";
+    private int historyLoadedCount = 0;
+    private static final int HISTORY_PAGE_SIZE = 50;
     private TextView pendingView, receivableView, personalExpensesView, meiUsedView, meiRemainingView, archivedCountView;
     private View meiProgressView;
     private static final long MEI_PERIOD_LIMIT_CENTS = 3375000L;
@@ -89,6 +98,7 @@ public class MainActivity extends Activity {
     private Uri cameraPhotoUri;
     private Uri currentReceiptUri;
     private Bitmap currentReceiptBitmap;
+    private Bitmap currentScannedBitmap;
     private File cameraPhotoFile;
 
     @Override public void onCreate(Bundle state) {
@@ -102,6 +112,7 @@ public class MainActivity extends Activity {
         ensurePaymentMethodColumn();
         ensurePurchaseDetailsColumn();
         ensureReceiptImageColumn();
+        ensureReceiptVariantsColumns();
         textRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
         if (state != null) {
             String savedUri = state.getString("camera_photo_uri");
@@ -164,6 +175,21 @@ public class MainActivity extends Activity {
             while (columns.moveToNext()) if ("receipt_image_path".equals(columns.getString(1))) { found = true; break; }
         } finally { columns.close(); }
         if (!found) db.execSQL("ALTER TABLE entries ADD COLUMN receipt_image_path TEXT NOT NULL DEFAULT ''");
+    }
+
+    /** Adds separate paths for the unchanged original and the reading-optimized scan. */
+    private void ensureReceiptVariantsColumns() {
+        ensureTextColumn("receipt_original_path");
+        ensureTextColumn("receipt_scanned_path");
+    }
+
+    private void ensureTextColumn(String columnName) {
+        boolean found = false;
+        Cursor columns = db.rawQuery("PRAGMA table_info(entries)", null);
+        try {
+            while (columns.moveToNext()) if (columnName.equals(columns.getString(1))) { found = true; break; }
+        } finally { columns.close(); }
+        if (!found) db.execSQL("ALTER TABLE entries ADD COLUMN " + columnName + " TEXT NOT NULL DEFAULT ''");
     }
 
     private void buildScreen() {
@@ -308,6 +334,20 @@ public class MainActivity extends Activity {
         receiptImagePreview.setContentDescription("Pré-visualização do comprovante digitalizado. Toque para ampliar.");
         receiptImagePreview.setOnClickListener(v -> showReceiptFullScreen());
         review.addView(receiptImagePreview, margin(0, 10, 0, 8));
+        LinearLayout imageChoices = new LinearLayout(this);
+        imageChoices.setOrientation(LinearLayout.HORIZONTAL);
+        scannedOptionButton = button("Digitalizada • alto contraste", PRIMARY);
+        originalOptionButton = button("Foto original", Color.rgb(230,231,250));
+        originalOptionButton.setTextColor(PRIMARY);
+        imageChoices.addView(scannedOptionButton, new LinearLayout.LayoutParams(0, dp(42), 1));
+        LinearLayout.LayoutParams originalParams = new LinearLayout.LayoutParams(0, dp(42), 1);
+        originalParams.leftMargin = dp(8);
+        imageChoices.addView(originalOptionButton, originalParams);
+        scannedOptionButton.setOnClickListener(v -> setReceiptPreviewMode(false));
+        originalOptionButton.setOnClickListener(v -> setReceiptPreviewMode(true));
+        imageChoices.setVisibility(View.GONE);
+        review.addView(imageChoices, margin(0, 0, 0, 8));
+        receiptImageChoices = imageChoices;
         TextView readLabel = text("Leitura e dados identificados", 14, INK, true);
         review.addView(readLabel, margin(0, 4, 0, 0));
         receiptPreview = text("Nenhum documento importado. Tire uma foto ou escolha uma imagem para começar.", 12, MUTED, false);
@@ -338,6 +378,11 @@ public class MainActivity extends Activity {
         historyContainer = new LinearLayout(this);
         historyContainer.setOrientation(LinearLayout.VERTICAL);
         history.addView(historyContainer);
+        historyLoadMoreButton = button("Carregar mais lançamentos", Color.rgb(230,231,250));
+        historyLoadMoreButton.setTextColor(PRIMARY);
+        historyLoadMoreButton.setVisibility(View.GONE);
+        historyLoadMoreButton.setOnClickListener(v -> loadMoreHistory());
+        history.addView(historyLoadMoreButton, margin(0, 10, 0, 0));
         root.addView(history);
         searchInput.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}

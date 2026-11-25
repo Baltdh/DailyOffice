@@ -620,7 +620,7 @@ public class MainActivity extends Activity {
         try {
             receiptImagePreview.setImageDrawable(null);
             recycleReceiptBitmaps();
-            currentReceiptBitmap = decodeReceiptBitmap(uri, 2000);
+            currentReceiptBitmap = decodeReceiptBitmap(uri, 2400);
             currentScannedBitmap = createScannedCopy(currentReceiptBitmap);
             showingOriginalReceipt = false;
             receiptImagePreview.setVisibility(View.VISIBLE);
@@ -756,8 +756,13 @@ public class MainActivity extends Activity {
         ScrollView viewer = new ScrollView(this);
         viewer.setFillViewport(true);
         viewer.addView(enlarged, new ScrollView.LayoutParams(-1, -2));
-        new AlertDialog.Builder(this).setTitle(title)
-                .setView(viewer).setPositiveButton("Fechar", (dialog, which) -> dialog.dismiss()).show();
+        AlertDialog dialog = new AlertDialog.Builder(this).setTitle(title)
+                .setView(viewer).setPositiveButton("Fechar", (dlg, which) -> dlg.dismiss()).create();
+        dialog.setOnDismissListener(ignored -> {
+            // History images are decoded only for the dialog; release them when the user closes it.
+            if (bitmap != currentReceiptBitmap && bitmap != currentScannedBitmap && !bitmap.isRecycled()) bitmap.recycle();
+        });
+        dialog.show();
     }
 
     /** Copies source bytes unchanged; this is the archival original, not the OCR preview. */

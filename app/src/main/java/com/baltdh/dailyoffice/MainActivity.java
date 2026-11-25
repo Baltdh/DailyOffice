@@ -605,7 +605,7 @@ public class MainActivity extends Activity {
                     bitmap = rotated;
                 }
             }
-        } catch (RuntimeException ignored) { /* The image remains viewable if EXIF metadata is malformed. */ }
+        } catch (IOException | RuntimeException ignored) { /* Keep the decoded image even when EXIF metadata is malformed. */ }
         return bitmap;
     }
 
@@ -622,7 +622,7 @@ public class MainActivity extends Activity {
             viewer.addView(enlarged, new ScrollView.LayoutParams(-1, -2));
             new AlertDialog.Builder(this).setTitle("Comprovante digitalizado")
                     .setView(viewer).setPositiveButton("Fechar", (dialog, which) -> dialog.dismiss()).show();
-        } catch (RuntimeException ex) {
+        } catch (IOException | RuntimeException ex) {
             Toast.makeText(this, "Não foi possível ampliar esta imagem.", Toast.LENGTH_SHORT).show();
         }
     }

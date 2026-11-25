@@ -66,7 +66,7 @@ public class MainActivity extends Activity {
     private TextView summary, businessRevenueView, expenseView, resultView, receiptPreview;
     private LinearLayout historyContainer;
     private ScrollView mainScroll;
-    private EditText descriptionInput, amountInput;
+    private EditText descriptionInput, amountInput, paymentInput;
     private Spinner kindInput;
     private Button receiptButton;
     private EditText searchInput;
@@ -86,6 +86,7 @@ public class MainActivity extends Activity {
         db = openOrCreateDatabase("dailyoffice.db", MODE_PRIVATE, null);
         db.execSQL("CREATE TABLE IF NOT EXISTS entries(id INTEGER PRIMARY KEY AUTOINCREMENT,kind TEXT NOT NULL,amount INTEGER NOT NULL,description TEXT NOT NULL)");
         ensureCreatedAtColumn();
+        ensurePaymentMethodColumn();
         textRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
         if (state != null) {
             String savedUri = state.getString("camera_photo_uri");
@@ -115,6 +116,15 @@ public class MainActivity extends Activity {
             columns.close();
         }
         if (!found) db.execSQL("ALTER TABLE entries ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0");
+    }
+
+    private void ensurePaymentMethodColumn() {
+        boolean found = false;
+        Cursor columns = db.rawQuery("PRAGMA table_info(entries)", null);
+        try {
+            while (columns.moveToNext()) if ("payment_method".equals(columns.getString(1))) { found = true; break; }
+        } finally { columns.close(); }
+        if (!found) db.execSQL("ALTER TABLE entries ADD COLUMN payment_method TEXT NOT NULL DEFAULT ''");
     }
 
     private void buildScreen() {
@@ -222,6 +232,8 @@ public class MainActivity extends Activity {
         form.addView(descriptionInput, margin(0, 0, 0, 9));
         amountInput = field("Valor em R$  •  ex.: 1.234,56", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
         form.addView(amountInput, margin(0, 0, 0, 9));
+        paymentInput = field("Forma de pagamento (Pix, débito, crédito...)", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        form.addView(paymentInput, margin(0, 0, 0, 9));
 
         kindInput = new Spinner(this);
         String[] kinds = {BUSINESS_REVENUE, BUSINESS_EXPENSE, PERSONAL_REVENUE, PERSONAL_EXPENSE, CONTRIBUTION, BUSINESS_EXPENSE_PERSONAL, TRANSFER};
@@ -438,8 +450,10 @@ public class MainActivity extends Activity {
             out.append("VALOR IDENTIFICADO\nR$ ").append(BrazilianMoney.formatCents(r.amountCents))
                     .append("  •  Confiança ").append(r.confidence)
                     .append("\nLinha: ").append(r.selectedLine)
+                    .append("\nForma de pagamento: ").append(r.paymentMethod.isEmpty() ? "Não identificada" : r.paymentMethod)
                     .append("\nCategoria sugerida: ").append(r.suggestedKind)
                     .append("\n\nConfira o valor e a categoria antes de salvar.\n\n");
+            if (!r.paymentMethod.isEmpty()) paymentInput.setText(r.paymentMethod);
             String[] kinds = {BUSINESS_REVENUE, BUSINESS_EXPENSE, PERSONAL_REVENUE, PERSONAL_EXPENSE, CONTRIBUTION, BUSINESS_EXPENSE_PERSONAL, TRANSFER};
             for (int i = 0; i < kinds.length; i++) if (kinds[i].equals(r.suggestedKind)) kindInput.setSelection(i);
         } else {
@@ -462,10 +476,11 @@ public class MainActivity extends Activity {
         values.put("kind", String.valueOf(kindInput.getSelectedItem()));
         values.put("amount", cents);
         values.put("description", description);
+        values.put("payment_method", paymentInput.getText().toString().trim());
         values.put("created_at", System.currentTimeMillis());
         try {
             db.insertOrThrow("entries", null, values);
-            amountInput.setText(""); descriptionInput.setText(""); kindInput.setSelection(0);
+            amountInput.setText(""); descriptionInput.setText(""); paymentInput.setText(""); kindInput.setSelection(0);
             receiptPreview.setText("Lançamento salvo. Importe outro documento ou registre uma nova movimentação.");
             refreshSummary();
             Toast.makeText(this, "Lançamento salvo.", Toast.LENGTH_SHORT).show();
@@ -495,8 +510,8 @@ public class MainActivity extends Activity {
             try (OutputStream output = stream;
                  OutputStreamWriter writer = new OutputStreamWriter(output, StandardCharsets.UTF_8)) {
                 writer.write("\uFEFF");
-                writer.write("ID;Data e hora;Categoria;Valor (R$);Descrição\r\n");
-                c = db.rawQuery("SELECT id,created_at,kind,amount,description FROM entries ORDER BY id ASC", null);
+                writer.write("ID;Data e hora;Categoria;Valor (R$);Descrição;Forma de pagamento\r\n");
+                c = db.rawQuery("SELECT id,created_at,kind,amount,description,payment_method FROM entries ORDER BY id ASC", null);
                 while (c.moveToNext()) {
                     writer.write(String.valueOf(c.getLong(0)));
                     writer.write(';');
@@ -507,6 +522,8 @@ public class MainActivity extends Activity {
                     writer.write(CsvUtils.escape(BrazilianMoney.formatCents(c.getLong(3))));
                     writer.write(';');
                     writer.write(CsvUtils.escape(c.getString(4)));
+                    writer.write(';');
+                    writer.write(CsvUtils.escape(c.getString(5)));
                     writer.write("\r\n");
                 }
                 writer.flush();
@@ -548,7 +565,7 @@ public class MainActivity extends Activity {
     private void refreshHistory() {
         if (historyContainer == null) return;
         historyContainer.removeAllViews();
-        Cursor c = db.rawQuery("SELECT id,kind,amount,description,created_at FROM entries ORDER BY id DESC", null);
+        Cursor c = db.rawQuery("SELECT id,kind,amount,description,created_at,payment_method FROM entries ORDER BY id DESC", null);
         int shown = 0;
         String query = searchInput == null ? "" : searchInput.getText().toString().trim().toLowerCase(java.util.Locale.ROOT);
         try {
@@ -580,6 +597,8 @@ public class MainActivity extends Activity {
                 info.addView(text(description, 14, INK, true));
                 info.addView(text(kind + "  •  " + money(amount), 11, MUTED, false));
                 info.addView(text(EntryDate.formatOrUnknown(createdAt), 10, MUTED, false));
+                String paymentMethod = c.getString(5);
+                if (paymentMethod != null && !paymentMethod.isEmpty()) info.addView(text("Pagamento: " + paymentMethod, 10, MUTED, false));
                 row.addView(info, new LinearLayout.LayoutParams(0, -2, 1));
                 Button remove = button("Excluir", Color.rgb(252, 235, 237));
                 remove.setTextColor(Color.rgb(176, 55, 70));

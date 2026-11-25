@@ -11,7 +11,8 @@ Aplicativo Android de controle financeiro pessoal e empresarial, com foco em mic
 - O valor sugerido não é salvo automaticamente: o usuário confere e pode editar descrição, valor e categoria.
 - Valores armazenados como centavos inteiros e analisados com BigDecimal, sem somas monetárias em double.
 - Resumo separado de faturamento empresarial, despesas empresariais, resultado dos lançamentos e movimentações pessoais.
-- Histórico dos 20 lançamentos mais recentes, com data e hora, exclusão individual protegida por confirmação e atualização automática dos totais.
+- Histórico sem limite total configurado, exibido em blocos de 50 lançamentos; a lista permite carregar mais registros, com limite prático determinado pela memória disponível no aparelho. Inclui data/hora, exclusão individual protegida por confirmação e atualização automática dos totais.
+- Comprovantes anexados são guardados em duas versões locais: arquivo original preservado e cópia em escala de cinza com contraste reforçado para leitura. Ambas podem ser abertas no histórico; registros antigos continuam compatíveis com o caminho legado.
 - Migração SQLite compatível adiciona a coluna de data/hora sem recriar a tabela nem apagar lançamentos anteriores; registros antigos são identificados como sem data.
 - Exportação do histórico completo para CSV UTF-8 com delimitador `;`, incluindo data/hora quando disponível; campos com aspas, quebras de linha e delimitadores são escapados; prefixos que poderiam ser interpretados como fórmulas por planilhas são neutralizados.
 - Aportes pessoais e transferências entre contas próprias não entram no faturamento.

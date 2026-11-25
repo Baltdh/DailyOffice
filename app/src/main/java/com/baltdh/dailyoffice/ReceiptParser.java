@@ -72,6 +72,10 @@ public final class ReceiptParser {
                 for (int back = 1; back <= 4 && lineIndex - back >= 0; back++) {
                     String prior = normalize(lines[lineIndex - back]);
                     if (prior.isEmpty()) continue;
+                    // A payment block is a hard boundary: never let "VALOR A PAGAR"
+                    // leak into the later "VALOR PAGO" or change candidates.
+                    if (prior.contains("FORMA DE PAGAMENTO") || prior.contains("FORMA PAGAMENTO")
+                            || prior.contains("MEIO DE PAGAMENTO")) break;
                     contextBuilder.insert(0, prior + " ");
                     if (containsAny(prior, NET_LABELS) || containsAny(prior, PAYABLE_LABELS)
                             || containsAny(prior, EXCLUDED_TERMS)) break;
